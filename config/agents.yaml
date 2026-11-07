@@ -3,7 +3,8 @@
 #
 # temperature : null = valeur par défaut du modèle. Les modèles Claude actuels (Sonnet 5.5, Haiku 5.5)
 # refusent les valeurs non par défaut : ne la renseigner que pour un fournisseur qui l'accepte.
-# tools_allowed : noms d'outils autorisés. Un outil web n'est accepté que pour `veille`,
+# allowed_tools : liste blanche des outils de l'agent (vide ou absente = aucun outil). Tout outil absent
+# de la liste est refusé, y compris pour `veille`. Seconde couche : un outil web n'est accepté que pour `veille`,
 # quelle que soit cette liste (règle codée dans llm/guards.py).
 
 agents:
@@ -13,42 +14,42 @@ agents:
     mode: sync
     max_tokens: 2048
     temperature: null
-    tools_allowed: []
+    allowed_tools: []
   sav:
     provider: anthropic
     model: claude-haiku-5-5
     mode: sync
     max_tokens: 1024
     temperature: null
-    tools_allowed: []
+    allowed_tools: []
   veille:
     provider: anthropic
     model: claude-sonnet-5-5
     mode: batch
     max_tokens: 8192
     temperature: null
-    tools_allowed: [web_search]
+    allowed_tools: [web_search]
   boutique:
     provider: anthropic
     model: claude-sonnet-5-5
     mode: batch
     max_tokens: 4096
     temperature: null
-    tools_allowed: []
+    allowed_tools: []
   marketing:
     provider: anthropic
     model: claude-sonnet-5-5
     mode: sync
     max_tokens: 2048
     temperature: null
-    tools_allowed: []
+    allowed_tools: []
   contenu:
     provider: anthropic
     model: claude-sonnet-5-5
     mode: batch
     max_tokens: 4096
     temperature: null
-    tools_allowed: []
+    allowed_tools: []
 
 # Plafonds mensuels en USD. Alerte à alert_ratio, refus à 100 %.
 budgets:

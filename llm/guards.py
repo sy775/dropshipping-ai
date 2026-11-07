@@ -55,10 +55,12 @@ def check_tools(agent: AgentConfig, tools: list[dict[str, Any]] | None) -> None:
         if not isinstance(tool, dict):
             raise ToolNotAllowed(f"outil mal formé pour {agent.name}")
         name = tool.get("name") or tool.get("type") or "?"
+        # Couche 1 : liste blanche de l'agent (allowed_tools). Vide = aucun outil, y compris pour veille.
+        if name not in agent.allowed_tools:
+            raise ToolNotAllowed(f"outil {name!r} non autorisé pour l'agent {agent.name} (absent de allowed_tools)")
+        # Couche 2 : détection par mots-clés, indépendante de la config.
         if is_web_tool(tool) and agent.name != WEB_AGENT:
             raise ToolNotAllowed(f"outil web {name!r} interdit pour l'agent {agent.name} (réservé à {WEB_AGENT})")
-        if name not in agent.tools_allowed:
-            raise ToolNotAllowed(f"outil {name!r} non autorisé pour l'agent {agent.name}")
 
 
 # ---------------------------------------------------------------- plafonds

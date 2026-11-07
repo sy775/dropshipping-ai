@@ -37,7 +37,7 @@ class AgentConfig:
     mode: str
     max_tokens: int
     temperature: float | None
-    tools_allowed: tuple[str, ...]
+    allowed_tools: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -104,9 +104,12 @@ def _parse_agent(name: str, raw: dict) -> AgentConfig:
     temperature = raw.get("temperature")
     if temperature is not None:
         temperature = _positive_number(temperature, f"{where}.temperature")
-    tools = raw.get("tools_allowed") or []
+    if "tools_allowed" in raw:
+        # Ancien nom : le refuser plutôt que l'ignorer (sinon l'agent perdrait ses outils sans bruit).
+        raise ConfigError(f"{where} : 'tools_allowed' a été renommé en 'allowed_tools'")
+    tools = raw.get("allowed_tools") or []   # absente = aucun outil
     if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
-        raise ConfigError(f"{where} : tools_allowed doit être une liste de noms")
+        raise ConfigError(f"{where} : allowed_tools doit être une liste de noms")
     return AgentConfig(
         name=name,
         provider=str(_require(raw, "provider", where)),
@@ -114,7 +117,7 @@ def _parse_agent(name: str, raw: dict) -> AgentConfig:
         mode=mode,
         max_tokens=max_tokens,
         temperature=temperature,
-        tools_allowed=tuple(tools),
+        allowed_tools=tuple(tools),
     )
 
 

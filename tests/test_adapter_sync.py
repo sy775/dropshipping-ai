@@ -171,7 +171,7 @@ def test_web_tool_refused_for_other_agents(rt):
 
 def test_web_tool_refused_even_if_listed_in_config(config_dir, make_runtime):
     edit_yaml(config_dir / "agents.yaml",
-              lambda d: d["agents"]["sav"].update(tools_allowed=["web_search"]))
+              lambda d: d["agents"]["sav"].update(allowed_tools=["web_search"]))
     rt = make_runtime()
     with pytest.raises(ToolNotAllowed):
         adapter.call("sav", "shop-a", MSG, tools=[WEB_TOOL], runtime=rt)
@@ -183,8 +183,30 @@ def test_web_tool_allowed_for_veille(rt):
 
 
 def test_unlisted_tool_refused_for_veille(rt):
-    with pytest.raises(ToolNotAllowed):
+    with pytest.raises(ToolNotAllowed, match="allowed_tools"):
         adapter.call("veille", None, MSG, tools=[{"name": "send_email"}], mode="sync", runtime=rt)
+    # même un outil web est refusé à veille s'il n'est pas dans sa liste (seul web_search y est)
+    with pytest.raises(ToolNotAllowed, match="allowed_tools"):
+        adapter.call("veille", None, MSG, tools=[{"type": "web_fetch_20260209", "name": "web_fetch"}],
+                     mode="sync", runtime=rt)
+    assert rt.fake.requests == []
+
+
+def test_neutral_named_tool_refused_outside_veille(rt):
+    # « fetch_page » échappe à la détection par mots-clés : c'est la liste blanche qui le bloque.
+    for agent in ("sourcing", "sav", "boutique", "contenu", "marketing"):
+        with pytest.raises(ToolNotAllowed, match="allowed_tools"):
+            adapter.call(agent, "shop-a", MSG, tools=[{"name": "fetch_page"}], mode="sync", runtime=rt)
+    assert rt.fake.requests == []
+
+
+def test_agent_without_list_has_no_tools(config_dir, make_runtime):
+    edit_yaml(config_dir / "agents.yaml", lambda d: d["agents"]["veille"].pop("allowed_tools"))
+    rt = make_runtime()
+    assert rt.settings.agent("veille").allowed_tools == ()
+    with pytest.raises(ToolNotAllowed):
+        adapter.call("veille", None, MSG, tools=[WEB_TOOL], mode="sync", runtime=rt)
+    adapter.call("veille", None, MSG, mode="sync", runtime=rt)   # sans outil : l'appel passe
 
 
 # --- critère : tarif expiré ou absent = alerte sans blocage ---

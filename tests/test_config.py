@@ -103,3 +103,14 @@ def test_prices_missing_verified_on_rejected(config_dir):
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(ConfigError, match="verified_on"):
         load_prices(config_dir)
+
+
+def test_legacy_tools_allowed_key_rejected(config_dir):
+    _edit_agents(config_dir, lambda d: d["agents"]["veille"].update(tools_allowed=["web_search"]))
+    with pytest.raises(ConfigError, match="allowed_tools"):
+        load_settings(config_dir)
+
+
+def test_allowed_tools_defaults_to_empty(config_dir):
+    _edit_agents(config_dir, lambda d: d["agents"]["sav"].pop("allowed_tools"))
+    assert load_settings(config_dir).agents["sav"].allowed_tools == ()

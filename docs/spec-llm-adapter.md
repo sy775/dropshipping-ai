@@ -16,7 +16,7 @@ Chaque appel est journalisé (modèle, tokens, coût). Un plafond de dépense LL
   `collect_batch` (appelée par le cron) récupère les résultats et `check_stale_batches` surveille les lots oubliés.
 - `llm/providers/anthropic` : implémentation du fournisseur.
 - `config/agents.yaml` : agent -> fournisseur, modèle, mode, `max_tokens` (obligatoire), température,
-  outils autorisés ; plafonds de dépense.
+  outils autorisés (`allowed_tools`) ; plafonds de dépense.
 - `config/prices.yaml` : tarifs par modèle, avec `verified_on` et `valid_until` (promotions).
 - `evals/<agent>/` : cas d'évaluation au format YAML.
 - `llm/evalrunner` : rejoue les cas sur un ou plusieurs modèles et produit un rapport.
@@ -77,7 +77,9 @@ Les migrations sont rejouables (table `schema_version`).
    liée au lot). Un lot dont la réservation dépasserait un plafond n'est pas envoyé. À la collecte, la réservation
    est remplacée par le coût réel au tarif batch. Un lot non collecté après 24 h déclenche une alerte.
    La limite configurée chez le fournisseur peut être dépassée légèrement par un lot : elle ne sert pas de garde-fou.
-3. Outils autorisés par agent : seul `veille` peut recevoir un outil web. L'adaptateur refuse toute requête
+3. Outils autorisés par agent : liste blanche `allowed_tools` dans `agents.yaml` (vide ou absente = aucun outil).
+   Tout outil absent de la liste est refusé, y compris pour `veille`. Seconde couche, indépendante de la config :
+   seul `veille` peut recevoir un outil web (détection par mots-clés). L'adaptateur refuse toute requête
    qui en fournit un à un autre agent.
 4. Prompts de plus de 100 000 tokens : l'appel est journalisé avec une alerte, car le tarif de Haiku 5.5 est multiplié par 5 au-delà.
 5. Un tarif absent ou périmé (`valid_until` dépassé) dans `prices.yaml` déclenche une alerte Telegram.
