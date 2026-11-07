@@ -9,7 +9,10 @@ import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
+
+from dotenv import load_dotenv
 
 from alerts.telegram import Notifier, TelegramNotifier
 from journal import db
@@ -18,6 +21,18 @@ from llm.config import PriceTable, Settings, load_prices, load_settings
 from llm.providers import create_provider
 from llm.providers.base import Provider
 from llm.providers.fake import FakeProvider
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_env(path: Path | str | None = None) -> bool:
+    """Charge <dépôt>/.env (ou `path`) dans l'environnement. Seul point de chargement du projet.
+
+    override=False : une variable déjà définie (cron, systemd, shell) l'emporte toujours sur .env.
+    Renvoie False si le fichier est absent, ce qui n'est pas une erreur.
+    """
+    return load_dotenv(Path(path) if path else REPO_ROOT / ".env", override=False)
 
 
 @dataclass
@@ -43,6 +58,7 @@ class Runtime:
 
     @classmethod
     def from_env(cls) -> "Runtime":
+        load_env()
         install_redaction()
         return cls(
             settings=load_settings(),
