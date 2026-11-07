@@ -11,6 +11,7 @@ from llm.pricing import Usage
 from llm.providers.base import ProviderError, ProviderResponse
 from llm.providers.fake import FakeProvider
 from tests.conftest import edit_yaml, rows, seed_spend
+from tests.fakes import ANTHROPIC_KEY_PREFIX, fake_anthropic_key
 
 MSG = [{"role": "user", "content": "Bonjour"}]
 WEB_TOOL = {"type": "web_search_20260209", "name": "web_search"}
@@ -268,13 +269,13 @@ def test_non_retryable_error_not_retried(make_runtime):
 
 
 def test_errors_are_redacted_in_journal(make_runtime):
-    leak = "clé REDACTED client jean@REDACTED.invalid"
+    leak = f"clé {fake_anthropic_key()} client jean@REDACTED.invalid"
     rt = make_runtime(provider=FakeProvider(failures=[ProviderError(leak, False)]))
     with pytest.raises(adapter.LLMCallError) as exc:
         adapter.call("sourcing", "shop-a", MSG, runtime=rt)
     err = rows(rt)[0]["error"]
-    assert "-".join(["sk", "ant"]) not in err and "jean@REDACTED.invalid" not in err
-    assert "-".join(["sk", "ant"]) not in str(exc.value)
+    assert ANTHROPIC_KEY_PREFIX not in err and "jean@REDACTED.invalid" not in err
+    assert ANTHROPIC_KEY_PREFIX not in str(exc.value)
 
 
 # --- sortie structurée ---

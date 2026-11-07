@@ -4,9 +4,10 @@ import urllib.parse
 
 from alerts.telegram import MemoryNotifier, TelegramNotifier
 from journal.redact import RedactingFilter, redact
+from tests.fakes import fake_anthropic_key, fake_telegram_token
 
-FAKE_ANTHROPIC_KEY = "-".join(["sk", "ant", "api03", ""]) + "A1b2C3d4" * 6
-FAKE_TG_TOKEN = "123456789:" + "AAbbCCddEEffGGhhIIjjKKllMMnnOOpp12"
+FAKE_ANTHROPIC_KEY = fake_anthropic_key()
+FAKE_TG_TOKEN = fake_telegram_token()
 
 
 def test_redact_keys_and_emails():
