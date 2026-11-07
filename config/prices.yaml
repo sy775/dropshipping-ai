@@ -1,0 +1,53 @@
+# Tarifs en USD par million de tokens.
+# Source : https://platform.claude.com/docs/en/about-claude/pricing (vérifié le 2026-11-08)
+#
+# tiers : paliers selon la taille du prompt (entrée + lectures + écritures de cache).
+#   up_to_input_tokens: null = pas de limite haute.
+# cache_write : écriture en cache à 5 minutes (1,25 x l'entrée). Le cache à 1 h (2 x) n'est pas utilisé.
+# batch_multiplier : remise de l'API de lots (-50 %), cumulable avec les tarifs de cache.
+# valid_until : date de fin d'un tarif promotionnel. null = tarif standard sans échéance.
+
+currency: USD
+unit: per_million_tokens
+
+models:
+  claude-haiku-5-5:
+    provider: anthropic
+    verified_on: 2026-11-08
+    valid_until: null
+    batch_multiplier: 0.5
+    tiers:
+      - up_to_input_tokens: 100000
+        input: 0.10
+        output: 0.50
+        cache_write: 0.125
+        cache_read: 0.01
+      - up_to_input_tokens: null   # au-delà de 100 000 tokens : x5
+        input: 0.50
+        output: 2.50
+        cache_write: 0.625
+        cache_read: 0.05
+
+  claude-sonnet-5-5:
+    provider: anthropic
+    verified_on: 2026-11-08
+    valid_until: null
+    batch_multiplier: 0.5
+    tiers:
+      - up_to_input_tokens: null
+        input: 2.00
+        output: 10.00
+        cache_write: 2.50
+        cache_read: 0.10   # 0,05 x l'entrée sur Sonnet 5.5
+
+  claude-opus-5-5:
+    provider: anthropic
+    verified_on: 2026-11-08
+    valid_until: null
+    batch_multiplier: 0.5
+    tiers:
+      - up_to_input_tokens: null
+        input: 4.00
+        output: 20.00
+        cache_write: 5.00
+        cache_read: 0.20

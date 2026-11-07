@@ -1,0 +1,72 @@
+# Configuration des agents LLM.
+# Changer le modèle d'un agent = modifier `model` ici, puis rejouer l'évaluation. Aucun code à toucher.
+#
+# temperature : null = valeur par défaut du modèle. Les modèles Claude actuels (Sonnet 5.5, Haiku 5.5)
+# refusent les valeurs non par défaut : ne la renseigner que pour un fournisseur qui l'accepte.
+# tools_allowed : noms d'outils autorisés. Un outil web n'est accepté que pour `veille`,
+# quelle que soit cette liste (règle codée dans llm/guards.py).
+
+agents:
+  sourcing:
+    provider: anthropic
+    model: claude-haiku-5-5
+    mode: sync
+    max_tokens: 2048
+    temperature: null
+    tools_allowed: []
+  sav:
+    provider: anthropic
+    model: claude-haiku-5-5
+    mode: sync
+    max_tokens: 1024
+    temperature: null
+    tools_allowed: []
+  veille:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    mode: batch
+    max_tokens: 8192
+    temperature: null
+    tools_allowed: [web_search]
+  boutique:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    mode: batch
+    max_tokens: 4096
+    temperature: null
+    tools_allowed: []
+  marketing:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    mode: sync
+    max_tokens: 2048
+    temperature: null
+    tools_allowed: []
+  contenu:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    mode: batch
+    max_tokens: 4096
+    temperature: null
+    tools_allowed: []
+
+# Plafonds mensuels en USD. Alerte à alert_ratio, refus à 100 %.
+budgets:
+  alert_ratio: 0.8
+  prod:
+    global_monthly: 60
+    per_shop_monthly: 45
+    shop_overrides: {}   # ex. { shop-bougies: 20 }
+  eval:
+    global_monthly: 5    # appels du runner d'évaluation, hors plafonds de production
+
+estimation:
+  chars_per_token: 3.5
+  input_margin: 0.20     # +20 % sur l'entrée estimée
+
+batch:
+  stale_after_hours: 24
+
+retry:
+  max_retries: 2
+  base_delay_s: 2        # délais : 2 s puis 4 s
