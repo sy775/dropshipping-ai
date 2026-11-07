@@ -82,8 +82,9 @@ Les migrations sont rejouables (table `schema_version`).
    seul `veille` peut recevoir un outil web (détection par mots-clés). L'adaptateur refuse toute requête
    qui en fournit un à un autre agent.
 4. Prompts de plus de 100 000 tokens : l'appel est journalisé avec une alerte, car le tarif de Haiku 5.5 est multiplié par 5 au-delà.
-5. Un tarif absent ou périmé (`valid_until` dépassé) dans `prices.yaml` déclenche une alerte Telegram.
-   L'appel continue avec le dernier tarif connu.
+5. Tarifs dans `prices.yaml` (l'appel n'est jamais bloqué, une alerte Telegram part dans les deux cas) :
+   - modèle absent de `prices.yaml` = tarif le plus cher de la table + alerte ;
+   - tarif expiré (`valid_until` dépassé) = dernier tarif connu + alerte.
 6. Nouvelles tentatives : 2 maximum, avec délai croissant. Chaque tentative est journalisée.
 7. Journalisation : jamais de clé d'API ni d'adresse email dans les logs.
 
