@@ -27,18 +27,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 class Exception_:
     file: str            # chemin exact, relatif à la racine du dépôt
     scopes: frozenset    # {"tree"}, {"history"} ou les deux
-    line: re.Pattern     # la ligne entière doit correspondre
+    exempt: re.Pattern   # seule la partie de la ligne qui correspond est exemptée ; le reste est scanné
     why: str
 
 
 # La chaîne du faux jeton est assemblée à l'exécution, pour que ce fichier ne contienne aucun littéral détectable.
-_FAKE_BEARER_LINE = re.escape("Bear" + "er abc.def-123")
+_FAKE_BEARER = re.escape("Bear" + "er abc.def-123")
 
 EXCEPTIONS: tuple[Exception_, ...] = (
-    Exception_("journal/redact.py", frozenset({"tree", "history"}), re.compile(r'\s*re\.compile\(r".*'),
-               "définition des expressions régulières de masquage"),
-    Exception_("tests/test_alerts.py", frozenset({"history"}), re.compile(r".*" + _FAKE_BEARER_LINE + r".*"),
-               "faux en-tête Authorization écrit en clair avant la spec 003 (historique uniquement)"),
+    Exception_("journal/redact.py", frozenset({"tree", "history"}), re.compile(r're\.compile\(r"(?:[^"\\]|\\.)*"'),
+               "littéral r\"...\" des expressions régulières de masquage (re.compile)"),
+    Exception_("tests/test_alerts.py", frozenset({"history"}), re.compile(_FAKE_BEARER),
+               "faux en-tête Authorization écrit en clair avant la spec 003 (chaîne exacte, historique uniquement)"),
 )
 
 
@@ -59,15 +59,20 @@ def _git(repo: Path, *args: str, input_: bytes | None = None) -> bytes:
     return subprocess.run(["git", "-C", str(repo), *args], input=input_, capture_output=True, check=True).stdout
 
 
-def _excepted(scope: str, path: str, line: str) -> bool:
-    return any(e.file == path and scope in e.scopes and e.line.fullmatch(line) for e in EXCEPTIONS)
+def _without_exempted_parts(scope: str, path: str, line: str) -> str:
+    """Retire de la ligne les seules parties couvertes par une exception applicable (fichier et portée)."""
+    for e in EXCEPTIONS:
+        if e.file == path and scope in e.scopes:
+            line = e.exempt.sub(" ", line)
+    return line
 
 
 def scan_text(scope: str, path: str, text: str, where: str) -> list[Finding]:
     found = []
     for no, line in enumerate(text.splitlines(), 1):
+        checked = _without_exempted_parts(scope, path, line)
         for i, pattern in enumerate(_PATTERNS, 1):
-            if pattern.search(line) and not _excepted(scope, path, line):
+            if pattern.search(checked):
                 found.append(Finding(scope, path, no, i, where, redact(line.strip())[:160]))
                 break
     return found
