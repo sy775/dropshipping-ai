@@ -67,6 +67,7 @@ class Settings:
     retry_base_delay_s: float
     pending_ttl_minutes: float = 15.0        # au-delà, une réservation `pending` est abandonnée
     search_tokens_estimate: int = 4000       # tokens d'entrée estimés par recherche web (résultats relus)
+    batch_results_retention_days: float = 29.0   # conservation des résultats de lot chez le fournisseur
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)   # options par fournisseur
 
     def agent(self, name: str) -> AgentConfig:
@@ -184,12 +185,17 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
     if isinstance(search_tokens, bool) or not isinstance(search_tokens, int) or search_tokens < 0:
         raise ConfigError("estimation.search_tokens_estimate : entier >= 0 attendu")
     providers = _parse_providers(data.get("providers") or {}, ttl)
+    stale_hours = _positive_number(_require(batch, "stale_after_hours", "batch"), "stale_after_hours")
+    retention = _positive_number(_require(batch, "results_retention_days", "batch"), "results_retention_days")
+    if retention * 24 <= stale_hours:
+        raise ConfigError("batch.results_retention_days doit dépasser batch.stale_after_hours")
     return Settings(
         agents=agents,
         budgets=budgets,
         chars_per_token=_positive_number(_require(est, "chars_per_token", "estimation"), "chars_per_token"),
         input_margin=_positive_number(_require(est, "input_margin", "estimation"), "input_margin"),
-        batch_stale_hours=_positive_number(_require(batch, "stale_after_hours", "batch"), "stale_after_hours"),
+        batch_stale_hours=stale_hours,
+        batch_results_retention_days=retention,
         max_retries=max_retries,
         retry_base_delay_s=_positive_number(_require(retry, "base_delay_s", "retry"), "base_delay_s"),
         pending_ttl_minutes=ttl,

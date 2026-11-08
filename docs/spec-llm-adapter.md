@@ -113,12 +113,15 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
    Réservation perdue (identifiant resté provisoire) : après vérification chez le fournisseur, l'outil
    `python -m journal.release_reservation` la traite à la main. `list` affiche les lignes `reserved` à identifiant
    provisoire plus vieilles que `batch.stale_after_hours` (modèle, âge, coût réservé). `attach <call_id> <batch_id>`
-   rattache l'identifiant retrouvé (la collecte reprend normalement). `release <call_id> --reason "..." --confirm`
+   rattache l'identifiant retrouvé (la collecte reprend normalement) ; refusé au-delà de
+   `batch.results_retention_days` (29 j, conservation des résultats chez le fournisseur), avec un message qui
+   oriente vers `release`. `release <call_id> --reason "..." --confirm`
    passe la ligne en `abandoned` avec `cost_usd = 0`, à n'utiliser que si le lot n'existe pas chez le fournisseur.
    Les trois commandes refusent une ligne qui n'est pas `reserved` et provisoire, ou plus jeune que
    `stale_after_hours`. La date et le motif (masqué par `redact`) sont écrits dans `error` et dans les logs.
    Rapprochement mensuel journal / console : `docs/procedure-rapprochement-mensuel.md` (écart toléré 5 %).
    Les résultats d'un lot restent téléchargeables 29 jours chez Anthropic : un lot doit être collecté avant.
+   `batch.results_retention_days` doit dépasser `batch.stale_after_hours` (refus au chargement sinon).
 3. Outils autorisés par agent : liste blanche `allowed_tools` dans `agents.yaml` (vide ou absente = aucun outil).
    Tout outil absent de la liste est refusé, y compris pour `veille`. Seconde couche, indépendante de la config :
    seul `veille` peut recevoir un outil web (détection par mots-clés). L'adaptateur refuse toute requête
@@ -222,3 +225,4 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
   (ligne `refused`, coût 0), en sync comme en lot. Les schémas de `evals/` passent le contrôle.
 - Un refus de garde-fou (coût 0, `stop_reason` NULL) et un refus du modèle (coût > 0, `stop_reason = refusal`)
   se distinguent dans le journal.
+- `attach` d'une réservation de 28 jours accepté ; à 29 jours + 1 h, refusé avec un message qui oriente vers `release`.

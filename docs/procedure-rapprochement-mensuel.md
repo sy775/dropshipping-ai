@@ -14,15 +14,16 @@ Durée : environ 15 minutes, dans les premiers jours du mois M+1, pour le mois M
    ```
    Une réservation restante est une estimation, pas un coût réel : la traiter d'abord (collecte, `attach` ou `release`).
    **Délai de 29 jours pour `attach`.** Anthropic conserve les résultats d'un lot 29 jours après sa création
-   (doc « Batch processing »). Passé ce délai, `attach` ne sert plus à rien : `collect_batch` ne peut plus lire
-   les résultats et le coût réel du lot ne sera jamais journalisé. Donc :
+   (doc « Batch processing »). Passé ce délai, `collect_batch` ne peut plus lire les résultats : `attach` refuse
+   donc toute réservation de plus de `batch.results_retention_days` (29 j, dans `config/agents.yaml`) et renvoie
+   vers `release --reason ... --confirm`. Donc :
    - traiter chaque alerte de lot oublié (26 h) dans la semaine, sans attendre le rapprochement mensuel :
      les lots du début du mois M ont déjà plus de 29 jours au moment du rapprochement de M+1 ;
-   - date limite absolue pour `attach` : date d'envoi (`ts` de la ligne) + 29 jours ;
-   - au-delà, si le lot existe dans la console : **ne pas utiliser `release`**, car le lot a été facturé. La
-     réservation reste comptée au mois M ; c'est une estimation haute, qui ne touche pas les plafonds du mois en
-     cours. Noter dans l'historique le montant de la console et le `call_id` ;
-   - si le lot n'existe pas dans la console, `release` reste la bonne commande, quel que soit l'âge.
+   - au-delà de 29 jours, utiliser `release`, mais **noter d'abord le coût affiché par la console** (s'il existe)
+     dans le `--reason` et dans l'historique. `release` met le coût journalisé à 0 : si le lot a été facturé, le
+     journal du mois M sous-estime ce montant, qui devient une cause d'écart connue pour ce mois. Les plafonds du
+     mois en cours ne sont pas touchés ;
+   - si le lot n'existe pas dans la console, `release` est la bonne commande, quel que soit l'âge.
 2. Vérifier qu'aucune ligne `pending` ne traîne (elles sont libérées automatiquement après `pending_ttl_minutes`).
 
 ## 2. Montant du journal
@@ -121,6 +122,7 @@ noter le coût total, puis le détail par modèle et la ligne des recherches web
 | Éléments de lot `errored`, `canceled`, `expired` : non facturés, journalisés à 0 | aucun | |
 | Tarif modifié chez Anthropic, ou tarif expiré (`valid_until`) | l'un ou l'autre | comparer `prices.yaml` à la page Pricing |
 | Recherches web : 10 $ / 1 000, sans remise en lot | journal < console si `web_search_requests` manque | colonne `recherches` de la requête 2 |
+| Lot retrouvé après 29 jours puis libéré par `release` : facturé, mais journalisé à 0 | journal < console | `error LIKE 'libération manuelle%'` ; montant noté dans l'historique |
 | Appels faits hors adaptateur (console, script de test) avec la même clé | journal < console | une clé d'API dédiée au serveur évite ce cas |
 | Routage `inference_geo` US (x 1,1) : non utilisé par le projet | journal < console | aucun paramètre `inference_geo` dans le code |
 

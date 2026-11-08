@@ -81,6 +81,8 @@ estimation:
 batch:
   # Les lots expirent à 24 h chez le fournisseur : l'alerte part après, pour laisser la collecte passer.
   stale_after_hours: 26
+  # Résultats d'un lot conservés 29 jours chez le fournisseur : au-delà, `attach` est refusé.
+  results_retention_days: 29
 
 # Une réservation `pending` (appel synchrone) plus vieille que ce délai est considérée comme abandonnée
 # (processus tué avant d'écrire le résultat) : elle est libérée à la prochaine réservation, avec alerte.

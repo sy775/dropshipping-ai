@@ -12,6 +12,7 @@ from tests.fakes import fake_anthropic_key
 
 MSG = [{"role": "user", "content": "Analyse la niche bougies"}]
 STALE_H = 26      # batch.stale_after_hours de config/agents.yaml
+RETENTION_D = 29  # batch.results_retention_days
 
 
 def _lost_reservation(rt, monkeypatch):
@@ -31,11 +32,13 @@ def _lost_reservation(rt, monkeypatch):
 
 
 def _run(rt, *argv, hours=27):
-    return main(list(argv), conn=rt.conn, min_age_hours=STALE_H, now=NOW + dt.timedelta(hours=hours))
+    return main(list(argv), conn=rt.conn, min_age_hours=STALE_H, now=NOW + dt.timedelta(hours=hours),
+                retention_days=RETENTION_D)
 
 
 def test_min_age_matches_config(rt):
     assert rt.settings.batch_stale_hours == STALE_H
+    assert rt.settings.batch_results_retention_days == RETENTION_D
 
 
 def _spend(rt):
@@ -136,6 +139,34 @@ def test_attach_refusals(rt, monkeypatch, capsys):
     assert "déjà rattaché" in capsys.readouterr().err
     assert _run(rt, "attach", h.call_id, "msgbatch_y", hours=48) == 1           # ligne non provisoire
     assert rows(rt, call_id=r["call_id"])[0]["batch_id"].startswith("pending-")
+
+
+def test_attach_accepted_at_28_days(rt, monkeypatch):
+    r = _lost_reservation(rt, monkeypatch)
+    assert _run(rt, "attach", r["call_id"], "msgbatch_retrouve", hours=28 * 24) == 0
+    assert rows(rt, call_id=r["call_id"])[0]["batch_id"] == "msgbatch_retrouve"
+
+
+def test_attach_refused_after_retention_points_to_release(rt, monkeypatch, capsys):
+    r = _lost_reservation(rt, monkeypatch)
+    assert _run(rt, "attach", r["call_id"], "msgbatch_retrouve", hours=29 * 24 + 1) == 1
+    err = capsys.readouterr().err
+    assert "29 j" in err and f"release {r['call_id']} --reason" in err and "--confirm" in err
+    row = rows(rt, call_id=r["call_id"])[0]
+    assert row["status"] == "reserved" and row["batch_id"].startswith("pending-")     # rien n'a changé
+    assert _run(rt, "release", r["call_id"], "--reason", "résultats expirés", "--confirm",
+                hours=29 * 24 + 1) == 0                                              # la voie indiquée marche
+
+
+def test_retention_must_exceed_stale_delay(config_dir):
+    from llm.config import ConfigError, load_settings
+    from tests.conftest import edit_yaml
+    edit_yaml(config_dir / "agents.yaml", lambda d: d["batch"].update(results_retention_days=1))
+    with pytest.raises(ConfigError, match="results_retention_days"):
+        load_settings(config_dir)
+    edit_yaml(config_dir / "agents.yaml", lambda d: d["batch"].pop("results_retention_days"))
+    with pytest.raises(ConfigError, match="results_retention_days"):
+        load_settings(config_dir)
 
 
 def test_migration_005_documents_manual_release(rt):

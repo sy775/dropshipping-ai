@@ -9,6 +9,8 @@ Après vérification dans la console du fournisseur :
     python -m journal.release_reservation release <call_id> --reason "..." --confirm   # lot jamais envoyé
 
 - `attach` écrit l'identifiant réel ; le cron `collect_batch` remplacera ensuite la réservation par le coût réel.
+  Refusé au-delà de batch.results_retention_days (29 j) : le fournisseur a supprimé les résultats, la collecte
+  est impossible.
 - `release` passe la ligne en `abandoned`, cost_usd = 0. À n'utiliser que si le lot n'existe pas chez le
   fournisseur (sinon il serait facturé hors plafond).
 Seules les lignes `reserved`, à identifiant provisoire et plus vieilles que batch.stale_after_hours sont
@@ -87,12 +89,18 @@ def _provisional_clause() -> str:
 
 
 def attach(conn: sqlite3.Connection, call_id: str, batch_id: str, now: dt.datetime,
-           min_age_hours: float) -> LostReservation:
+           min_age_hours: float, retention_days: float) -> LostReservation:
     batch_id = batch_id.strip()
     if not batch_id or batch_id.startswith(PROVISIONAL_PREFIX):
         raise ReleaseError("refus : identifiant de lot fournisseur attendu (pas un identifiant provisoire)")
     with db.transaction(conn):
         lost = _eligible(conn, call_id, now, min_age_hours)
+        if lost.age_hours > retention_days * 24:
+            raise ReleaseError(
+                f"refus : réservation de {lost.age_hours / 24:.1f} j, au-delà de la conservation des résultats "
+                f"de lot ({retention_days:g} j, batch.results_retention_days) : la collecte est impossible. "
+                f"Utiliser : python -m journal.release_reservation release {call_id} --reason \"...\" --confirm "
+                f"(voir docs/procedure-rapprochement-mensuel.md : noter d'abord le coût affiché par la console)")
         if conn.execute("SELECT 1 FROM llm_calls WHERE batch_id = ?", (batch_id,)).fetchone():
             raise ReleaseError(f"refus : le lot {batch_id} est déjà rattaché à une autre ligne")
         note = f"identifiant rattaché manuellement le {now.isoformat(timespec='seconds')} (était {lost.batch_id})"
@@ -127,7 +135,8 @@ def release(conn: sqlite3.Connection, call_id: str, reason: str, confirm: bool, 
 # ====================================================================== CLI
 
 def main(argv: list[str] | None = None, conn: sqlite3.Connection | None = None,
-         min_age_hours: float | None = None, now: dt.datetime | None = None) -> int:
+         min_age_hours: float | None = None, now: dt.datetime | None = None,
+         retention_days: float | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m journal.release_reservation",
                                      description="Réservations de lot à identifiant provisoire.")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -141,12 +150,14 @@ def main(argv: list[str] | None = None, conn: sqlite3.Connection | None = None,
     p_rel.add_argument("--confirm", action="store_true")
     args = parser.parse_args(argv)
 
-    if conn is None or min_age_hours is None:
+    if conn is None or min_age_hours is None or retention_days is None:
         from llm.config import load_settings          # import tardif : l'outil reste utilisable seul
         from llm.runtime import load_env
         load_env()
+        settings = load_settings()
         conn = conn or db.connect()
-        min_age_hours = min_age_hours if min_age_hours is not None else load_settings().batch_stale_hours
+        min_age_hours = min_age_hours if min_age_hours is not None else settings.batch_stale_hours
+        retention_days = retention_days if retention_days is not None else settings.batch_results_retention_days
     now = now or db.utc_now()
 
     try:
@@ -158,7 +169,7 @@ def main(argv: list[str] | None = None, conn: sqlite3.Connection | None = None,
                 print(f"{r.call_id}  agent={r.agent}  modèle={r.model}  âge={r.age_hours:.1f} h  "
                       f"réservé={r.reserved_usd:.4f} $  envoyé le {r.ts.isoformat(timespec='minutes')}")
         elif args.cmd == "attach":
-            lost = attach(conn, args.call_id, args.batch_id, now, min_age_hours)
+            lost = attach(conn, args.call_id, args.batch_id, now, min_age_hours, retention_days)
             print(f"Lot {args.batch_id} rattaché à {lost.call_id} : collect_batch le collectera.")
         else:
             lost = release(conn, args.call_id, args.reason, args.confirm, now, min_age_hours)
