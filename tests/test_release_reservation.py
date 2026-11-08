@@ -11,7 +11,7 @@ from tests.conftest import NOW, rows
 from tests.fakes import fake_anthropic_key
 
 MSG = [{"role": "user", "content": "Analyse la niche bougies"}]
-STALE_H = 24
+STALE_H = 26      # batch.stale_after_hours de config/agents.yaml
 
 
 def _lost_reservation(rt, monkeypatch):
@@ -30,8 +30,12 @@ def _lost_reservation(rt, monkeypatch):
     return r
 
 
-def _run(rt, *argv, hours=25):
+def _run(rt, *argv, hours=27):
     return main(list(argv), conn=rt.conn, min_age_hours=STALE_H, now=NOW + dt.timedelta(hours=hours))
+
+
+def test_min_age_matches_config(rt):
+    assert rt.settings.batch_stale_hours == STALE_H
 
 
 def _spend(rt):
@@ -42,11 +46,11 @@ def _spend(rt):
 
 def test_list_shows_old_provisional_reservations(rt, monkeypatch, capsys):
     r = _lost_reservation(rt, monkeypatch)
-    assert _run(rt, "list", hours=23) == 0
+    assert _run(rt, "list", hours=25) == 0
     assert "Aucune" in capsys.readouterr().out                     # trop récente
     assert _run(rt, "list") == 0
     out = capsys.readouterr().out
-    assert r["call_id"] in out and "claude-sonnet-5-5" in out and "25.0 h" in out
+    assert r["call_id"] in out and "claude-sonnet-5-5" in out and "27.0 h" in out
     assert f"{r['cost_usd']:.4f} $" in out
 
 
@@ -94,7 +98,7 @@ def test_release_frees_the_reservation_and_logs_without_client_data(rt, monkeypa
     row = rows(rt, call_id=r["call_id"])[0]
     assert row["status"] == "abandoned" and row["cost_usd"] == 0
     assert _spend(rt) == 0                                          # plafond libéré
-    assert "libération manuelle le 2026-11-09T13:00:00" in row["error"] and "lot absent" in row["error"]
+    assert "libération manuelle le 2026-11-09T15:00:00" in row["error"] and "lot absent" in row["error"]
     for text in (row["error"], caplog.text, capsys.readouterr().out):
         assert "jean.dupont@example.com" not in text and key not in text
     assert "libérée manuellement" in caplog.text

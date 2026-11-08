@@ -86,9 +86,10 @@ def test_batch_per_shop_reservation(rt):
     assert exc.value.cap.key == "prod:shop:shop-a"
 
 
-def test_stale_batch_alert_after_24h(rt):
+def test_stale_batch_alert_after_26h(rt):
+    assert rt.settings.batch_stale_hours == 26          # > 24 h, durée de vie d'un lot chez le fournisseur
     h = adapter.call("veille", None, [CONV], runtime=rt)
-    rt.clock.advance(hours=23)
+    rt.clock.advance(hours=25)                          # lot expiré chez le fournisseur, collecte encore possible
     assert adapter.check_stale_batches(runtime=rt) == []
     rt.clock.advance(hours=2)
     assert adapter.check_stale_batches(runtime=rt) == [h.batch_id]

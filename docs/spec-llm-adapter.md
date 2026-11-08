@@ -101,10 +101,11 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
    Si l'appel finit malgré tout après l'expiration, sa ligne reprend le statut et le coût réels.
 2. Pour un lot (`batch`), le coût maximal estimé est réservé dans le cumul mensuel à l'envoi (ligne `reserved`
    liée au lot). Un lot dont la réservation dépasserait un plafond n'est pas envoyé. À la collecte, la réservation
-   est remplacée par le coût réel au tarif batch. Un lot non collecté après 24 h déclenche une alerte.
+   est remplacée par le coût réel au tarif batch. Un lot non collecté après `batch.stale_after_hours` (26 h) déclenche une alerte : les lots expirent à 24 h
+   chez le fournisseur, la marge de 2 h laisse passer la collecte qui suit l'expiration.
    Identifiant provisoire : la ligne `reserved` est écrite, dans la transaction de réservation, avec
    `batch_id = pending-<call_id>` ; il est remplacé par l'identifiant du fournisseur après l'envoi. Si le processus
-   meurt entre les deux, `check_stale_batches` signale aussi ces réservations après 24 h (lot peut-être envoyé et
+   meurt entre les deux, `check_stale_batches` signale aussi ces réservations après 26 h (lot peut-être envoyé et
    facturé : vérification manuelle chez le fournisseur ; la réservation reste comptée jusque-là).
    Mois de facturation : les lignes réelles d'un lot sont imputées au mois d'envoi (`billing_month` de la
    réservation), même si la collecte a lieu le mois suivant.
@@ -201,5 +202,5 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 - Une entrée à 90 000 tokens estimés (108 000 avec la marge de 20 %) est facturée au palier supérieur dans l'estimation.
 - L'alerte à 80 % part une seule fois par mois et par plafond.
 - Une ligne `pending` de 3 h est libérée (`abandoned`, coût 0) ; une de 5 min ne l'est pas ; l'alerte part une fois par jour.
-- Plantage simulé entre l'envoi d'un lot et l'écriture de son identifiant : l'alerte de lot oublié part après 24 h.
+- Plantage simulé entre l'envoi d'un lot et l'écriture de son identifiant : l'alerte de lot oublié part après 26 h (pas à 25 h).
 - Un lot envoyé le 30 et collecté le 2 du mois suivant est imputé au mois d'envoi.

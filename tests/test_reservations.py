@@ -103,7 +103,7 @@ def test_crash_between_submit_and_id_write_alerts_after_24h(rt, monkeypatch):
     assert r["batch_id"] == f"pending-{r['call_id']}"         # identifiant provisoire, dans la même transaction
     assert r["cost_usd"] > 0                                  # la réservation reste comptée
 
-    rt.clock.advance(hours=23)
+    rt.clock.advance(hours=25)
     assert adapter.check_stale_batches(runtime=rt) == []
     rt.clock.advance(hours=2)
     assert adapter.check_stale_batches(runtime=rt) == [r["batch_id"]]
