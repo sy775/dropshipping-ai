@@ -111,8 +111,12 @@ def update_call(conn: sqlite3.Connection, call_id: str, **fields) -> None:
 
 
 def month_spend(conn: sqlite3.Connection, month: str, purpose: str, shop_id: str | None = None) -> float:
-    """Cumul du mois de facturation (réel + réservations en cours), hors appels simulés."""
-    sql = "SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE dry_run = 0 AND purpose = ? AND billing_month = ?"
+    """Cumul du mois de facturation (réel + réservations en cours), hors appels simulés.
+
+    Repli sur le mois de `ts` quand billing_month est NULL (ligne écrite hors de insert_call), comme
+    la vue v_llm_cost_monthly : une ligne sans mois de facturation ne doit jamais échapper au plafond."""
+    sql = ("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE dry_run = 0 AND purpose = ? "
+           "AND COALESCE(billing_month, substr(ts, 1, 7)) = ?")
     args: list = [purpose, month]
     if shop_id is not None:
         sql += " AND shop_id = ?"

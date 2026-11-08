@@ -67,7 +67,9 @@ coût estimé réservé), `ok`, `error`, `format_error`, `refused`, `reserved` (
 `released` (réservation de lot remplacée par le réel), `abandoned` (réservation `pending` expirée, `cost_usd = 0`).
 Mois de facturation : `billing_month` (`YYYY-MM`, UTC) est rempli à l'insertion avec le mois de `ts`, sauf pour
 les lignes réelles d'un lot, qui recopient celui de leur réservation (mois d'envoi). Les cumuls mensuels
-(`month_spend`) et la vue filtrent sur ce champ, pas sur `ts`.
+(`month_spend`) et la vue filtrent sur ce champ, pas sur `ts`, avec le même repli :
+`COALESCE(billing_month, substr(ts, 1, 7))`. Une ligne écrite sans `billing_month` (SQL brut, outil externe)
+est donc toujours comptée dans le plafond du mois de son `ts`.
 Une vue agrège le coût par mois de facturation, par agent, par boutique et par usage (`prod` / `eval`).
 Les migrations sont rejouables (table `schema_version`) ; une migration publiée n'est jamais modifiée.
 
