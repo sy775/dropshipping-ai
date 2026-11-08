@@ -86,6 +86,12 @@ batch:
 reservations:
   pending_ttl_minutes: 15
 
+# Options par fournisseur. timeout_s : délai maximal d'une tentative (le SDK ne fait aucune reprise :
+# max_retries=0, les reprises sont gérées et journalisées par l'adaptateur). Doit rester < pending_ttl_minutes.
+providers:
+  anthropic:
+    timeout_s: 120
+
 retry:
   max_retries: 2
   base_delay_s: 2        # délais : 2 s puis 4 s

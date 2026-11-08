@@ -67,6 +67,7 @@ class Settings:
     retry_base_delay_s: float
     pending_ttl_minutes: float = 15.0        # au-delà, une réservation `pending` est abandonnée
     search_tokens_estimate: int = 4000       # tokens d'entrée estimés par recherche web (résultats relus)
+    providers: dict[str, dict[str, Any]] = field(default_factory=dict)   # options par fournisseur
 
     def agent(self, name: str) -> AgentConfig:
         if name not in self.agents:
@@ -176,6 +177,7 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
     search_tokens = _require(est, "search_tokens_estimate", "estimation")
     if isinstance(search_tokens, bool) or not isinstance(search_tokens, int) or search_tokens < 0:
         raise ConfigError("estimation.search_tokens_estimate : entier >= 0 attendu")
+    providers = _parse_providers(data.get("providers") or {}, ttl)
     return Settings(
         agents=agents,
         budgets=budgets,
@@ -186,7 +188,32 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
         retry_base_delay_s=_positive_number(_require(retry, "base_delay_s", "retry"), "base_delay_s"),
         pending_ttl_minutes=ttl,
         search_tokens_estimate=search_tokens,
+        providers=providers,
     )
+
+
+DEFAULT_PROVIDER_TIMEOUT_S = 120.0
+
+
+def _parse_providers(raw: dict, pending_ttl_minutes: float) -> dict[str, dict[str, Any]]:
+    """Options par fournisseur. timeout_s : délai maximal d'une tentative (défaut 120 s). Il doit rester
+    strictement inférieur à la durée de vie d'une réservation `pending`, sinon une réservation encore en
+    cours pourrait être libérée comme abandonnée pendant que l'appel est facturé."""
+    if not isinstance(raw, dict):
+        raise ConfigError("providers : objet attendu")
+    out: dict[str, dict[str, Any]] = {}
+    for name, opts in raw.items():
+        opts = dict(opts or {})
+        where = f"providers.{name}.timeout_s"
+        timeout = _positive_number(opts.get("timeout_s", DEFAULT_PROVIDER_TIMEOUT_S), where)
+        if timeout <= 0:
+            raise ConfigError(f"{where} doit être > 0")
+        if timeout >= pending_ttl_minutes * 60:
+            raise ConfigError(f"{where} ({timeout:g} s) doit être < reservations.pending_ttl_minutes "
+                              f"({pending_ttl_minutes:g} min = {pending_ttl_minutes * 60:g} s)")
+        opts["timeout_s"] = timeout
+        out[str(name)] = opts
+    return out
 
 
 # ---------------------------------------------------------------- prices.yaml

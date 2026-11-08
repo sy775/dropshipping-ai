@@ -39,7 +39,9 @@ def test_recent_pending_is_kept(rt):
 
 
 def test_ttl_read_from_config(config_dir, make_runtime):
-    edit_yaml(config_dir / "agents.yaml", lambda d: d.update(reservations={"pending_ttl_minutes": 2}))
+    # le délai d'appel doit rester < TTL (session 2) : 60 s < 2 min
+    edit_yaml(config_dir / "agents.yaml", lambda d: d.update(reservations={"pending_ttl_minutes": 2},
+                                                            providers={"anthropic": {"timeout_s": 60}}))
     rt = make_runtime()
     cid = _pending(rt, dt.timedelta(minutes=5))
     adapter.call("sourcing", "shop-a", MSG, runtime=rt)

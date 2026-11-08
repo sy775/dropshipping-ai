@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import shutil
+import socket
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,30 @@ from llm.runtime import Runtime
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 NOW = dt.datetime(2026, 11, 8, 12, 0, tzinfo=dt.timezone.utc)
+
+
+_CREDENTIAL_VARS = ("LLM_LIVE", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE",
+                    "ANTHROPIC_IDENTITY_TOKEN", "ANTHROPIC_IDENTITY_TOKEN_FILE", "ANTHROPIC_FEDERATION_RULE_ID")
+
+
+class NetworkBlocked(RuntimeError):
+    pass
+
+
+@pytest.fixture(autouse=True)
+def _isolation(request, monkeypatch):
+    """Hors tests `live` : aucune clé ni LLM_LIVE dans l'environnement, et tout accès réseau échoue."""
+    if request.node.get_closest_marker("live"):
+        return
+    for var in _CREDENTIAL_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+    def blocked(*args, **kwargs):
+        raise NetworkBlocked("accès réseau interdit dans les tests (marquer le test `live`)")
+    monkeypatch.setattr(socket.socket, "connect", blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", blocked)
+    monkeypatch.setattr(socket, "create_connection", blocked)
+    monkeypatch.setattr(socket, "getaddrinfo", blocked)
 
 
 class Clock:

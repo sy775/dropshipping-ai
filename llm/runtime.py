@@ -18,6 +18,7 @@ from alerts.telegram import Notifier, TelegramNotifier
 from journal import db
 from journal.redact import install_redaction
 from llm.config import PriceTable, Settings, load_prices, load_settings
+from llm.guards import notify
 from llm.providers import create_provider
 from llm.providers.base import Provider
 from llm.providers.fake import FakeProvider
@@ -42,11 +43,23 @@ class Runtime:
     conn: sqlite3.Connection
     notifier: Notifier
     live: bool = False                       # dry-run par défaut
-    provider_factory: Callable[[str], Provider] = create_provider
+    # Fabrique nom -> fournisseur. None = registre (llm/providers), avec les options de agents.yaml et alert_once.
+    provider_factory: Callable[[str], Provider] | None = None
     clock: Callable[[], dt.datetime] = db.utc_now
     sleep: Callable[[float], None] = time.sleep
     dry_run_provider: FakeProvider = field(default_factory=FakeProvider)
     _providers: dict[str, Provider] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.provider_factory is None:
+            self.provider_factory = lambda name: create_provider(
+                name, self.settings.providers.get(name, {}), self.alert_once)
+
+    def alert_once(self, key: str, text: str) -> None:
+        """Alerte Telegram au plus une fois par jour et par clé (dédupliquée dans le journal)."""
+        now = self.clock()
+        if db.record_alert_once(self.conn, f"{key}:{now.date().isoformat()}", now):
+            notify(self.notifier, text)
 
     def provider_for(self, name: str, live: bool | None = None) -> Provider:
         """Fournisseur réel si live, sinon le fournisseur simulé (aucun appel réseau)."""

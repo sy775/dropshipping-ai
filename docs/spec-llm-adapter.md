@@ -116,12 +116,36 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
    - modèle absent de `prices.yaml` = tarif le plus cher de la table + alerte ;
    - tarif expiré (`valid_until` dépassé) = dernier tarif connu + alerte.
 6. Nouvelles tentatives : 2 maximum, avec délai croissant. Chaque tentative est journalisée.
+   Le SDK du fournisseur ne fait aucune reprise (`max_retries=0`). Délai maximal d'une tentative :
+   `providers.<nom>.timeout_s` (défaut 120 s), refusé au chargement s'il n'est pas strictement inférieur à
+   `reservations.pending_ttl_minutes` (sinon une réservation encore en cours pourrait être libérée).
 7. Journalisation : jamais de clé d'API ni d'adresse email dans les logs.
 8. Complétion : seuls `end_turn` et `stop_sequence` sont un succès. `max_tokens`, `model_context_window_exceeded`,
    `pause_turn` (et tout motif inconnu ou absent) donnent `incomplete` et `LLMIncompleteError` ; `refusal` donne
    `refused` et `LLMRefusedError`, avec alerte Telegram une fois par jour et par agent. Aucune nouvelle tentative
    automatique, le coût réel est toujours journalisé, aucun contenu n'est renvoyé. En lot, chaque élément suit la
    même règle (`content = None`). Le schéma n'est validé que sur une réponse complète.
+
+## Fournisseur Anthropic (`llm/providers/anthropic.py`)
+- SDK Python officiel ; client créé au premier appel réel, `max_retries=0`, `timeout=timeout_s`. La clé est lue
+  par le SDK dans l'environnement, jamais par le code ni dans les logs (messages d'erreur passés par `redact`).
+- Erreurs -> `ProviderError` : 408, 429, 5xx (dont 529 surcharge), coupure réseau et délai dépassé : `retryable=True` ;
+  autres 4xx : `retryable=False` ; 401 : `retryable=False` + alerte Telegram via `alert_once` (une fois par jour).
+- `alert_once(clé, texte)` est fourni par le runtime (déduplication dans `llm_alerts`, clé suffixée par la date).
+- `cache_prefix` -> bloc `system` avec `cache_control: {type: ephemeral}` (5 minutes). Sous le minimum
+  cacheable (512 tokens sur Haiku 5.5 et Sonnet 5.5), le cache est ignoré sans erreur.
+- `schema` -> `output_config.format` (`json_schema`) ; `effort` -> `output_config.effort` ; `temperature` envoyée
+  seulement si renseignée. Les objets du schéma doivent porter `additionalProperties: false` (contrainte de l'API).
+- Outils : seuls ceux transmis par l'adaptateur ; `web_search` part en version simple `web_search_20250305`
+  avec le `max_uses` imposé par l'adaptateur.
+- Usage : `tokens_in = input_tokens` (hors cache), `cache_read = cache_read_input_tokens`,
+  `cache_write = cache_creation_input_tokens`, `web_search_requests = server_tool_use.web_search_requests`.
+- Lots : `batch_results` renvoie None tant que `processing_status != "ended"` ; `succeeded` -> réponse,
+  `errored` / `canceled` / `expired` -> erreur (ces trois cas ne sont pas facturés). Résultats conservés 29 jours.
+- Test réel unique (`-m live`, ignoré sans `LLM_LIVE=1` et `ANTHROPIC_API_KEY`) : Haiku 5.5, `max_tokens` 512,
+  `purpose=eval`, journal réel ; vérifie `stop_reason == end_turn` et le coût contre un calcul manuel sur l'usage brut.
+- Tests hors `live` : une fixture automatique retire `LLM_LIVE` et les identifiants Anthropic de l'environnement
+  et bloque tout accès réseau.
 
 ## Évaluation
 - Format d'un cas : `id`, `input`, `expected` (critères vérifiables par code : champs requis, mots interdits,
