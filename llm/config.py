@@ -41,7 +41,7 @@ class AgentConfig:
     temperature: float | None
     allowed_tools: tuple[str, ...]
     effort: str | None = None              # None = défaut du modèle (medium sur Haiku 5.5, high sur Sonnet 5.5)
-    web_search_max_uses: int | None = None # obligatoire si web_search est autorisé : borne le coût de recherche
+    web_search_max_uses: int | None = None # obligatoire si un outil web est autorisé : borne son coût
 
 
 @dataclass(frozen=True)
@@ -123,8 +123,14 @@ def _parse_agent(name: str, raw: dict) -> AgentConfig:
     max_uses = raw.get("web_search_max_uses")
     if max_uses is not None and (isinstance(max_uses, bool) or not isinstance(max_uses, int) or max_uses < 1):
         raise ConfigError(f"{where} : web_search_max_uses doit être un entier >= 1")
-    if WEB_SEARCH_TOOL in tools and max_uses is None:
-        raise ConfigError(f"{where} : web_search autorisé sans web_search_max_uses (coût de recherche non borné)")
+    if max_uses is None:
+        # Même détection que le garde-fou de l'adaptateur (web_search, web_fetch, ...). Import tardif :
+        # llm.guards importe ce module.
+        from llm.guards import is_web_tool
+        web = [t for t in tools if is_web_tool({"name": t})]
+        if web:
+            raise ConfigError(f"{where} : outil web {web[0]!r} autorisé sans web_search_max_uses "
+                              f"(coût non borné)")
     return AgentConfig(
         name=name,
         provider=str(_require(raw, "provider", where)),

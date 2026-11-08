@@ -19,7 +19,7 @@ Chaque appel est journalisé (modèle, tokens, coût). Un plafond de dépense LL
 - `llm/providers/anthropic` : implémentation du fournisseur.
 - `config/agents.yaml` : agent -> fournisseur, modèle, mode, `max_tokens` (obligatoire), température,
   `effort` (`low` à `max`, `low` au départ ; null = défaut du modèle), outils autorisés (`allowed_tools`),
-  `web_search_max_uses` (obligatoire si `web_search` est autorisé) ; plafonds de dépense ;
+  `web_search_max_uses` (obligatoire dès qu'un outil reconnu par `guards.is_web_tool` est autorisé : `web_search`, `web_fetch`... ; l'adaptateur le revérifie dans `_prepare_tools` et refuse sans appel) ; plafonds de dépense ;
   `estimation.search_tokens_estimate` (tokens d'entrée par recherche, 4 000 au départ).
 - `config/prices.yaml` : tarifs par modèle, avec `verified_on` et `valid_until` (promotions) ; `server_tools` :
   frais à l'unité par fournisseur (`web_search_per_1000: 10`, sans remise batch).

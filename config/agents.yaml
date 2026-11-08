@@ -9,7 +9,7 @@
 # effort : low | medium | high | xhigh | max (null = défaut du modèle : medium sur Haiku 5.5, high sur Sonnet 5.5).
 #   Valeur la plus basse au départ, à relever seulement si l'évaluation le justifie. La réflexion (thinking)
 #   reste active par défaut et consomme max_tokens : surveiller les réponses `incomplete` (stop_reason max_tokens).
-# web_search_max_uses : nombre maximal de recherches web par appel (obligatoire si web_search est autorisé).
+# web_search_max_uses : nombre maximal de recherches web par appel (obligatoire si un outil web est autorisé : web_search, web_fetch...).
 #   Il est imposé à l'outil par l'adaptateur et compté dans la réservation (pire cas).
 
 agents:

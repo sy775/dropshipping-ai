@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from journal import db
-from llm import adapter
+from llm import adapter, guards
 from llm.adapter import LLMIncompleteError, LLMRefusedError
 from llm.config import ConfigError, load_prices, load_settings
 from llm.pricing import Usage, compute_cost, payload_chars
@@ -202,6 +202,35 @@ def test_web_search_without_max_uses_rejected(config_dir):
     edit_yaml(config_dir / "agents.yaml", lambda d: d["agents"]["veille"].pop("web_search_max_uses"))
     with pytest.raises(ConfigError, match="web_search_max_uses"):
         load_settings(config_dir)
+
+
+@pytest.mark.parametrize("tool", ["web_fetch", "web_search"])
+def test_any_web_tool_without_max_uses_rejected_by_config(config_dir, tool):
+    def mutate(d):
+        d["agents"]["veille"].pop("web_search_max_uses")
+        d["agents"]["veille"]["allowed_tools"] = [tool]
+    edit_yaml(config_dir / "agents.yaml", mutate)
+    with pytest.raises(ConfigError, match=f"{tool}.*web_search_max_uses"):
+        load_settings(config_dir)
+
+
+def test_non_web_tool_does_not_need_max_uses(config_dir):
+    edit_yaml(config_dir / "agents.yaml", lambda d: d["agents"]["sav"].update(allowed_tools=["lookup_order"]))
+    assert load_settings(config_dir).agents["sav"].web_search_max_uses is None
+
+
+def test_adapter_refuses_web_tool_without_max_uses_even_if_config_bypassed(make_runtime):
+    # Settings construit à la main : la validation de agents.yaml n'a pas tourné.
+    import dataclasses
+    rt = make_runtime()
+    veille = dataclasses.replace(rt.settings.agents["veille"], allowed_tools=("web_fetch",), web_search_max_uses=None)
+    rt.settings = dataclasses.replace(rt.settings, agents={**rt.settings.agents, "veille": veille})
+    with pytest.raises(guards.ToolNotAllowed, match="web_search_max_uses"):
+        adapter.call("veille", None, MSG, tools=[{"type": "web_fetch_20260209", "name": "web_fetch"}],
+                     mode="sync", runtime=rt)
+    assert rt.fake.requests == [] and rt.fake.batches == {}
+    (row,) = rows(rt)
+    assert row["status"] == "refused" and row["cost_usd"] == 0
 
 
 def test_search_tokens_estimate_required(config_dir):
