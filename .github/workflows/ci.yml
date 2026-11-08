@@ -1,0 +1,80 @@
+# CI de la spec 003. Aucun déclencheur de pull request (forks exclus) ; jeton GitHub en lecture seule.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "17 3 * * *"          # chaque nuit (UTC), sur main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  secret_scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # historique complet
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m tools.secret_scan
+
+  mutation_check:
+    # Complet sur main, la nuit et à la demande ; --changed sur les branches spec/* ; rien ailleurs.
+    if: github.ref == 'refs/heads/main' || github.event_name != 'push' || startsWith(github.ref, 'refs/heads/spec/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # origin/main nécessaire (id du catalogue, --changed)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Mutations (complet)
+        if: github.ref == 'refs/heads/main' || github.event_name != 'push'
+        run: python -m tools.mutation_check --jobs 4
+      - name: Mutations (--changed)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/spec/')
+        run: python -m tools.mutation_check --changed --jobs 4
+
+  notify:
+    needs: [pytest, secret_scan, mutation_check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Notification Telegram
+        if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python -m tools.ci_notify
