@@ -30,3 +30,16 @@ Système d'agents IA qui crée et exploite des boutiques de niche en France (une
 - Je dispose de 3 à 5 h par semaine : découpe en livrables courts, testables en une session.
 - Plan d'abord pour toute tâche de plus de ~50 lignes : propose, attends ma validation. Petits commits, tests à chaque module.
 - Après chaque tâche : 3 lignes sur ce qui a été fait et comment le tester.
+- Si une instruction est contradictoire, ambiguë ou fausse, le dire AVANT d'exécuter.
+
+## Processus de développement
+1. Spec : `/spec NNN-titre` + texte collé → `docs/specs/NNN-titre.md`, branche `spec/NNN-titre` depuis `origin/main` à jour.
+2. Plan : proposé à partir de CLAUDE.md et de la spec, puis arrêt.
+3. Validation : par Younes, explicite. Aucun code avant.
+4. Implémentation : petits commits testés sur la branche `spec/NNN-titre`.
+5. `/audit` : pytest, `tools/secret_scan.py`, `tools/mutation_check.py`, puis sous-agent `critic` ; point bloquant = test rouge commité seul, puis correction dans un commit séparé.
+6. Rapport : `docs/reports/NNN-titre.md`, commité avec le code.
+7. Push de la branche `spec/NNN-titre` uniquement.
+- Jamais de commit direct sur main, jamais de push vers main, jamais de fusion : la fusion reste à Younes.
+- Hooks (`.claude/settings.json`, scripts dans `tools/hooks/`) : `tests/test_audit_guards.py` et `.env*` protégés, push vers main et push forcé bloqués, pytest en fin de tour.
+- Catalogue `tools/mutations.yaml` : `old`, `new`, `file` modifiables ; jamais supprimer une entrée ni changer son `id`.
