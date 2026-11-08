@@ -76,7 +76,7 @@ def plan_steps(full: bool, base: str) -> list[Step]:
     py = sys.executable
     mutation = [py, "-m", "tools.mutation_check", "--base", base] + ([] if full else ["--changed"])
     return [
-        Step("pytest complet", [py, "-m", "pytest", "-q"]),
+        Step("pytest complet", [py, "-m", "pytest", "-p", "no:cacheprovider"]),
         Step("secret_scan (arbre et historique)", [py, "-m", "tools.secret_scan"]),
         Step("mutation_check" + (" (complet)" if full else " (--changed)"), mutation),
     ]

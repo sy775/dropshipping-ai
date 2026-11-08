@@ -1,5 +1,7 @@
 # Spec 003 : outillage du développement (specs, CI, hooks, critic, /spec, /audit)
 
+> État : implémentée sur la branche `spec/003-outillage` (fusion par Younes).
+
 ## Objectif
 Réduire le temps de Younes par cycle à environ 5 minutes sans supprimer aucune validation humaine
 (plan et fusion dans main). Toutes les vérifications déterministes deviennent automatiques.

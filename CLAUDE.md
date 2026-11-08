@@ -12,7 +12,7 @@ Système d'agents IA qui crée et exploite des boutiques de niche en France (une
 - `agents/` : veille (seul accès web), sourcing, boutique, contenu, marketing, sav
 - `risk/` : garde-fous codés hors LLM, non contournables
 - `journal/` : SQLite, une ligne par action, avec l'identifiant de la boutique
-- `config/` : réglages YAML ; schéma JSON de la « spécification de niche » dans `config/niche_spec.schema.json`
+- `config/` : réglages YAML ; schéma JSON de la « spécification de niche » à créer dans `config/niche_spec.schema.json` (pas encore écrit)
 - `private/niches/` : fiches de niche (ignoré par git, jamais commité)
 - `connectors/` : Shopify Admin API, fournisseurs, Meta/TikTok Ads, tous avec mode dry-run
 - `docs/specs/NNN-titre.md` : spécifications de développement (gabarit `_template.md`)
