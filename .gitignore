@@ -14,3 +14,7 @@ data/
 *.sqlite
 *.sqlite-journal
 *.db
+
+docs/business-plan.md
+specs/niches/
+private/
