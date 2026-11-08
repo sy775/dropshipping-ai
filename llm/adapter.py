@@ -145,9 +145,9 @@ class _Ctx:
         if db.record_alert_once(self.rt.conn, key, self.now):
             notify(self.rt.notifier, f"Appel LLM refusé ({self.cfg.name}, mode {self.mode}) : {exc}.")
 
-    def after_spend(self) -> None:
-        guards.threshold_alerts(self.rt.conn, self.caps, self.month, self.rt.settings.budgets.alert_ratio,
-                                self.rt.notifier, self.now)
+    def after_spend(self, month: str | None = None) -> None:
+        guards.threshold_alerts(self.rt.conn, self.caps, month or self.month,
+                                self.rt.settings.budgets.alert_ratio, self.rt.notifier, self.now)
 
     def expire_orphans(self) -> list:
         """Libère les réservations `pending` expirées. À appeler en tête de la transaction de réservation."""
@@ -348,10 +348,13 @@ def collect_batch(batch_id: str, schema: dict | None = None, *,
         return None
 
     lookup = resolve_price(rt.prices, res_row["model"], ctx.now.date())
+    billing_month = res_row["billing_month"] or res_row["ts"][:7]
     outcomes: dict[str, BatchItemOutcome] = {}
     with db.transaction(rt.conn):
         for r in results:
-            common = ctx.row(model=res_row["model"], provider=res_row["provider"], batch_id=batch_id)
+            # Lignes réelles imputées au mois d'envoi (celui de la réservation), pas au mois de collecte.
+            common = ctx.row(model=res_row["model"], provider=res_row["provider"], batch_id=batch_id,
+                             billing_month=billing_month)
             if r.response is None:
                 cid = db.insert_call(rt.conn, **common, status="error", cost_usd=0, error=redact(r.error or "?"))
                 outcomes[r.custom_id] = BatchItemOutcome(r.custom_id, None, None, 0.0, cid, redact(r.error or "?"))
@@ -366,7 +369,7 @@ def collect_batch(batch_id: str, schema: dict | None = None, *,
         # La réservation est remplacée par les coûts réels ci-dessus.
         db.update_call(rt.conn, res_row["call_id"], status="released", cost_usd=0)
 
-    ctx.after_spend()
+    ctx.after_spend(billing_month)
     for o in outcomes.values():
         if o.usage:
             ctx.check_long_prompt(o.usage, o.call_id)

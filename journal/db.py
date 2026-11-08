@@ -17,6 +17,7 @@ CALL_COLUMNS = (
     "tokens_in", "tokens_out", "tokens_cache_read", "tokens_cache_write",
     "tokens_in_estimated", "tokens_out_estimated", "cost_estimated_usd", "cost_usd",
     "latency_ms", "status", "error", "attempt", "batch_id", "dry_run",
+    "billing_month",      # migration 003 : mois d'imputation (mois d'envoi pour les lignes d'un lot)
 )
 
 
@@ -94,6 +95,7 @@ def insert_call(conn: sqlite3.Connection, **fields) -> str:
     fields.setdefault("call_id", uuid.uuid4().hex)
     ts = fields.get("ts") or utc_now()
     fields["ts"] = ts.astimezone(dt.timezone.utc).isoformat() if isinstance(ts, dt.datetime) else ts
+    fields.setdefault("billing_month", fields["ts"][:7])
     cols = ", ".join(fields)
     marks = ", ".join("?" for _ in fields)
     conn.execute(f"INSERT INTO llm_calls ({cols}) VALUES ({marks})", tuple(fields.values()))
@@ -109,8 +111,8 @@ def update_call(conn: sqlite3.Connection, call_id: str, **fields) -> None:
 
 
 def month_spend(conn: sqlite3.Connection, month: str, purpose: str, shop_id: str | None = None) -> float:
-    """Cumul du mois (réel + réservations en cours), hors appels simulés."""
-    sql = "SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE dry_run = 0 AND purpose = ? AND substr(ts, 1, 7) = ?"
+    """Cumul du mois de facturation (réel + réservations en cours), hors appels simulés."""
+    sql = "SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE dry_run = 0 AND purpose = ? AND billing_month = ?"
     args: list = [purpose, month]
     if shop_id is not None:
         sql += " AND shop_id = ?"

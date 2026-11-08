@@ -12,7 +12,7 @@ EXPECTED_COLUMNS = {
     "call_id", "ts", "shop_id", "agent", "provider", "model", "mode", "purpose",
     "tokens_in", "tokens_out", "tokens_cache_read", "tokens_cache_write",
     "tokens_in_estimated", "tokens_out_estimated", "cost_estimated_usd", "cost_usd",
-    "latency_ms", "status", "error", "attempt", "batch_id", "dry_run",
+    "latency_ms", "status", "error", "attempt", "batch_id", "dry_run", "billing_month",
 }
 
 

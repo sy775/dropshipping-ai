@@ -114,3 +114,51 @@ def test_legacy_reserved_row_without_batch_id_is_reported(rt):
     cid = db.insert_call(rt.conn, ts=NOW - dt.timedelta(hours=30), agent="veille", provider="anthropic",
                          model="claude-sonnet-5-5", mode="batch", purpose="prod", status="reserved", cost_usd=0.04)
     assert adapter.check_stale_batches(runtime=rt) == [f"pending-{cid}"]
+
+
+# ---------------------------------------------------------------- point 3 : lot à cheval sur deux mois
+
+def test_batch_sent_on_30th_collected_on_2nd_is_billed_to_send_month(make_runtime):
+    from llm.pricing import Usage
+    from llm.providers.base import ProviderResponse
+    from llm.providers.fake import FakeProvider
+    usage = Usage(tokens_in=2000, tokens_out=1000)
+    rt = make_runtime(provider=FakeProvider(responder=lambda req: ProviderResponse(text="ok", usage=usage)))
+    rt.clock.now = dt.datetime(2026, 11, 30, 22, 0, tzinfo=dt.timezone.utc)
+    h = adapter.call("veille", None, [MSG, MSG], runtime=rt)
+    assert rows(rt, call_id=h.call_id)[0]["billing_month"] == "2026-11"
+
+    rt.clock.now = dt.datetime(2026, 12, 2, 3, 0, tzinfo=dt.timezone.utc)
+    rt.fake.finish(h.batch_id)
+    out = adapter.collect_batch(h.batch_id, runtime=rt)
+
+    real = sum(o.cost_usd for o in out.values())
+    assert real == pytest.approx(2 * (2000 * 2 + 1000 * 10) / 1e6 * 0.5)
+    items = rows(rt, batch_id=h.batch_id, status="ok")
+    assert all(r["ts"].startswith("2026-12-02") and r["billing_month"] == "2026-11" for r in items)
+    assert db.month_spend(rt.conn, "2026-11", "prod") == pytest.approx(real)   # réservation remplacée par le réel
+    assert db.month_spend(rt.conn, "2026-12", "prod") == 0
+    view = {r["month"]: r["cost_usd"] for r in rt.conn.execute(
+        "SELECT month, SUM(cost_usd) AS cost_usd FROM v_llm_cost_monthly WHERE dry_run = 0 GROUP BY month")}
+    assert view == {"2026-11": pytest.approx(real)}
+
+
+def test_sync_call_billing_month_is_call_month(rt):
+    res = adapter.call("sourcing", "shop-a", MSG, runtime=rt)
+    assert rows(rt, call_id=res.call_id)[0]["billing_month"] == NOW.strftime("%Y-%m")
+
+
+def test_migration_003_backfills_billing_month(tmp_path):
+    import shutil
+    mig = tmp_path / "mig"
+    mig.mkdir()
+    for f in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
+        if f.stem < "003":
+            shutil.copy(f, mig / f.name)
+    conn = db.connect(tmp_path / "j.sqlite", migrations_dir=mig)
+    conn.execute("INSERT INTO llm_calls (call_id, ts, agent, provider, model, mode, purpose, status, cost_usd) "
+                 "VALUES ('old', '2026-10-15T08:00:00+00:00', 'sav', 'anthropic', 'm', 'sync', 'prod', 'ok', 2.5)")
+    conn.close()
+    conn = db.connect(tmp_path / "j.sqlite")                  # applique 003 sur une base existante
+    assert conn.execute("SELECT billing_month FROM llm_calls WHERE call_id = 'old'").fetchone()[0] == "2026-10"
+    assert db.month_spend(conn, "2026-10", "prod") == 2.5
