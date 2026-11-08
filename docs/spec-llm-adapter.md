@@ -160,10 +160,10 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
   `max_length` (caractères), conformité au schéma (validée par l'adaptateur : échec de format sinon).
   Un cas est réussi si tous ses critères passent ; score = cas réussis / cas exécutés. Les messages d'échec ne
   recopient jamais une valeur interdite et passent par `redact`.
-- Appels via l'adaptateur, mode `sync`, `purpose="eval"` (plafond eval de 5 \$/mois). Le modèle évalué est substitué
+- Appels via l'adaptateur, mode `sync`, `purpose="eval"` (plafond eval de 5 $/mois). Le modèle évalué est substitué
   dans une copie en mémoire des réglages : aucun fichier de configuration n'est modifié. Le fournisseur d'un modèle
   est lu dans `prices.yaml` ; modèle inconnu = erreur.
-- `--repeat N` rejoue chaque cas N fois. `--max-cost` (1 \$ par défaut, en `--live`) : le run s'arrête avant
+- `--repeat N` rejoue chaque cas N fois. `--max-cost` (1 $ par défaut, en `--live`) : le run s'arrête avant
   l'appel dont le coût estimé ferait dépasser ce montant ; le plafond eval mensuel arrête aussi le run.
 - Rapport Markdown + JSON dans `data/reports/` : par modèle, score, coût, latence médiane, échecs de format,
   incomplets, refus, erreurs, ignorés, exécutions synthétiques. Marqué « indicatif » et « coût au tarif sync »
