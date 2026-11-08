@@ -220,3 +220,5 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 - Un lot envoyé le 30 et collecté le 2 du mois suivant est imputé au mois d'envoi.
 - Un schéma conforme est transmis ; un objet imbriqué sans `additionalProperties: false` est refusé sans appel
   (ligne `refused`, coût 0), en sync comme en lot. Les schémas de `evals/` passent le contrôle.
+- Un refus de garde-fou (coût 0, `stop_reason` NULL) et un refus du modèle (coût > 0, `stop_reason = refusal`)
+  se distinguent dans le journal.

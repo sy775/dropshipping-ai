@@ -82,6 +82,25 @@ def test_refusal_raises_logs_cost_no_retry_and_alerts_once_per_day(make_runtime)
     assert sum("Refus du modèle" in m for m in rt.notifier.messages) == 2
 
 
+def test_guard_refusal_and_model_refusal_are_distinguishable_in_journal(make_runtime):
+    rt = make_runtime(provider=answering("refusal"))
+    with pytest.raises(guards.ToolNotAllowed):                      # garde-fou : outil web pour sav
+        adapter.call("sav", "shop-a", MSG, tools=[WEB], runtime=rt)
+    assert rt.fake.requests == []
+    with pytest.raises(LLMRefusedError):                            # refus du modèle
+        adapter.call("sav", "shop-a", MSG, runtime=rt)
+    guard, model = rows(rt, status="refused")
+    assert (guard["stop_reason"], guard["cost_usd"]) == (None, 0)
+    assert guard["error"] and "web" in guard["error"]
+    assert model["stop_reason"] == "refusal" and model["cost_usd"] > 0
+    assert model["cost_usd"] == pytest.approx(HAIKU_COST)
+    # Requêtes de la procédure de rapprochement : chaque catégorie isolée par stop_reason.
+    q = "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE status = 'refused' AND stop_reason {}"
+    assert tuple(rt.conn.execute(q.format("IS NULL")).fetchone()) == (1, 0)
+    n, cost = rt.conn.execute(q.format("= 'refusal'")).fetchone()
+    assert n == 1 and cost == pytest.approx(HAIKU_COST)
+
+
 def test_schema_not_checked_on_incomplete_answer(make_runtime):
     rt = make_runtime(provider=answering("max_tokens", text='{"prix": 1'))
     with pytest.raises(LLMIncompleteError):
