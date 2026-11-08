@@ -74,3 +74,43 @@ def test_batch_reservation_also_expires_orphans(rt):
 def test_abandoned_is_a_documented_status(rt):
     statuses = {r[0] for r in rt.conn.execute("SELECT status FROM llm_call_statuses")}
     assert "abandoned" in statuses
+
+
+# ---------------------------------------------------------------- point 2 : lot à identifiant perdu
+
+def test_batch_reservation_carries_provisional_id_then_provider_id(rt):
+    h = adapter.call("veille", None, [MSG], runtime=rt)
+    (r,) = rows(rt, call_id=h.call_id)
+    assert r["batch_id"] == h.batch_id and not h.batch_id.startswith(adapter.PROVISIONAL_BATCH_PREFIX)
+
+
+def test_crash_between_submit_and_id_write_alerts_after_24h(rt, monkeypatch):
+    real_update = db.update_call
+
+    def crash_on_batch_id(conn, call_id, **fields):
+        if "batch_id" in fields:
+            raise KeyboardInterrupt("processus tué")          # plantage simulé, après l'envoi
+        real_update(conn, call_id, **fields)
+    monkeypatch.setattr(db, "update_call", crash_on_batch_id)
+    with pytest.raises(KeyboardInterrupt):
+        adapter.call("veille", None, [MSG], runtime=rt)
+    monkeypatch.undo()
+
+    assert len(rt.fake.batches) == 1                          # le lot est bien parti chez le fournisseur
+    (r,) = rows(rt, status="reserved")
+    assert r["batch_id"] == f"pending-{r['call_id']}"         # identifiant provisoire, dans la même transaction
+    assert r["cost_usd"] > 0                                  # la réservation reste comptée
+
+    rt.clock.advance(hours=23)
+    assert adapter.check_stale_batches(runtime=rt) == []
+    rt.clock.advance(hours=2)
+    assert adapter.check_stale_batches(runtime=rt) == [r["batch_id"]]
+    adapter.check_stale_batches(runtime=rt)
+    alerts = [m for m in rt.notifier.messages if r["call_id"] in m]
+    assert len(alerts) == 1 and "sans identifiant fournisseur" in alerts[0]
+
+
+def test_legacy_reserved_row_without_batch_id_is_reported(rt):
+    cid = db.insert_call(rt.conn, ts=NOW - dt.timedelta(hours=30), agent="veille", provider="anthropic",
+                         model="claude-sonnet-5-5", mode="batch", purpose="prod", status="reserved", cost_usd=0.04)
+    assert adapter.check_stale_batches(runtime=rt) == [f"pending-{cid}"]

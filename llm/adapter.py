@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,6 +32,7 @@ log = logging.getLogger(__name__)
 PURPOSES = ("prod", "eval")
 LONG_PROMPT_TOKENS = 100_000      # règle 4
 MAX_ERROR_LEN = 500
+PROVISIONAL_BATCH_PREFIX = "pending-"   # batch_id provisoire tant que l'identifiant fournisseur n'est pas écrit
 
 
 class LLMCallError(Exception):
@@ -296,7 +298,11 @@ def _submit_batch(ctx: _Ctx, conversations, schema, cache_prefix, tools) -> Batc
         except BudgetExceeded as exc:
             refused = exc
         else:
-            call_id = db.insert_call(rt.conn, **ctx.row(status="reserved", cost_usd=total, **estimates))
+            # Identifiant provisoire écrit avec la réservation : si le processus meurt entre l'envoi et
+            # l'écriture de l'identifiant fournisseur, check_stale_batches retrouve quand même la ligne.
+            call_id = uuid.uuid4().hex
+            db.insert_call(rt.conn, **ctx.row(call_id=call_id, status="reserved", cost_usd=total,
+                                              batch_id=f"{PROVISIONAL_BATCH_PREFIX}{call_id}", **estimates))
     ctx.alert_orphans(expired)
     if refused:
         ctx.refuse_budget(refused, **estimates)
@@ -368,16 +374,28 @@ def collect_batch(batch_id: str, schema: dict | None = None, *,
 
 
 def check_stale_batches(*, runtime: Runtime | None = None) -> list[str]:
-    """Lots réservés et non collectés depuis plus de `stale_after_hours` : alerte une fois par lot."""
+    """Lots réservés et non collectés depuis plus de `stale_after_hours` : alerte une fois par lot.
+
+    Couvre aussi les réservations dont l'identifiant est resté provisoire (`pending-<call_id>`) :
+    lot peut-être envoyé et facturé, mais identifiant fournisseur perdu. La réservation reste comptée
+    dans le cumul jusqu'à vérification manuelle chez le fournisseur."""
     rt = runtime or get_runtime()
     now = rt.clock()
     limit = now - dt.timedelta(hours=rt.settings.batch_stale_hours)
     stale = []
     for r in rt.conn.execute("SELECT call_id, batch_id, ts, agent, cost_usd FROM llm_calls "
-                             "WHERE status = 'reserved' AND batch_id IS NOT NULL ORDER BY ts"):
-        if dt.datetime.fromisoformat(r["ts"]) <= limit:
-            stale.append(r["batch_id"])
-            if db.record_alert_once(rt.conn, f"batch_stale:{r['batch_id']}", now):
-                notify(rt.notifier, f"Lot {r['batch_id']} ({r['agent']}) non collecté depuis plus de "
-                                    f"{rt.settings.batch_stale_hours:g} h ; {r['cost_usd']:.4f} $ restent réservés.")
+                             "WHERE status = 'reserved' ORDER BY ts"):
+        if dt.datetime.fromisoformat(r["ts"]) > limit:
+            continue
+        batch_id = r["batch_id"] or f"{PROVISIONAL_BATCH_PREFIX}{r['call_id']}"   # lignes antérieures au correctif
+        stale.append(batch_id)
+        if not db.record_alert_once(rt.conn, f"batch_stale:{batch_id}", now):
+            continue
+        if batch_id.startswith(PROVISIONAL_BATCH_PREFIX):
+            notify(rt.notifier, f"Lot {r['agent']} réservé il y a plus de {rt.settings.batch_stale_hours:g} h sans "
+                                f"identifiant fournisseur (call_id {r['call_id']}) : envoi interrompu ? Vérifier "
+                                f"chez le fournisseur ; {r['cost_usd']:.4f} $ restent réservés.")
+        else:
+            notify(rt.notifier, f"Lot {batch_id} ({r['agent']}) non collecté depuis plus de "
+                                f"{rt.settings.batch_stale_hours:g} h ; {r['cost_usd']:.4f} $ restent réservés.")
     return stale
