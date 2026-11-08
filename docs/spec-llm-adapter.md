@@ -180,13 +180,16 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 
 ## Évaluation (`llm/evalrunner.py`)
 - Commande : `python -m llm.evalrunner --agent sav --models claude-haiku-5-5,stub-alt [--live] [--repeat N]
-  [--max-cost 1]`. Dry-run par défaut ; `--live` n'a d'effet qu'avec `LLM_LIVE=1` (sinon code de sortie 2, rien
-  n'est lancé).
+  [--max-cost 1] [--show-outputs]`. Dry-run par défaut ; `--live` n'a d'effet qu'avec `LLM_LIVE=1` (sinon code de
+  sortie 2, rien n'est lancé).
 - Cas : `evals/<agent>/<id>.yaml` (`id`, `synthetic`, `input.messages`, `input.cache_prefix`, `schema` facultatif,
   `expected`). `evals/<agent>/_schema.yaml` est le schéma par défaut de l'agent ; `schema: null` = texte libre.
-- Critères, vérifiables par code uniquement : `required_fields` (chemins pointés, non vides), `forbidden_values`
-  (sous-chaînes, insensible à la casse), `required_patterns` (expressions régulières), `numeric_bounds` (`min`/`max`),
-  `max_length` (caractères), conformité au schéma (validée par l'adaptateur : échec de format sinon).
+- Critères, vérifiables par code uniquement : `required_fields` (chemins pointés, non vides), `field_equals`
+  (`{chemin: valeur}`, égalité stricte : `false` ne vaut pas `0`), `forbidden_values` (sous-chaînes, insensible à la
+  casse ; liste = tout le texte, ou `{values, fields}` = seulement ces champs), `required_patterns` (expressions
+  régulières), `numeric_bounds` (`min`/`max`), `max_length` (caractères), conformité au schéma (validée par
+  l'adaptateur : échec de format sinon).
+  `field_equals` et la portée `fields` exigent un schéma (contrôlé au chargement).
   Un cas est réussi si tous ses critères passent ; score = cas réussis / cas exécutés. Les messages d'échec ne
   recopient jamais une valeur interdite et passent par `redact`.
 - Appels via l'adaptateur, mode `sync`, `purpose="eval"` (plafond eval de 5 $/mois). Le modèle évalué est substitué
@@ -198,8 +201,13 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
   incomplets, refus, erreurs, ignorés, exécutions synthétiques. Marqué « indicatif » et « coût au tarif sync »
   (les agents en lot coûteraient environ moitié moins). Le runner ne change jamais la configuration : la décision
   reste humaine.
-- Jeu de départ : 5 cas synthétiques par agent (dont 2 injections de prompt pour veille, une injection pour sav
-  et sourcing, un message SAV contenant l'email du client), à compléter avec des cas réels (cible : 15 à 20).
+- `--show-outputs` affiche dans la console la sortie de chaque cas `synthetic: true` ; pour un cas non synthétique,
+  l'affichage est refusé (ligne « affichage refusé », le cas est exécuté et noté normalement). Les sorties ne sont
+  écrites ni dans le journal ni dans les rapports.
+- Jeu de départ : au moins 5 cas synthétiques par agent, dont 2 injections de prompt pour veille, 2 pour sav et
+  1 pour sourcing, et un message SAV contenant l'email du client ; à compléter avec des cas réels (cible : 15 à 20).
+  En sourcing, la décision est lue dans `conforme_ue` et l'injection peut être signalée dans `motif` ; en sav, la
+  réponse part chez le client, donc toute reprise de l'injection est un échec.
   L'email d'un cas ne doit apparaître ni dans le journal ni dans les rapports (testé).
 
 ## Critères de test (aucun appel réel au fournisseur : clients simulés)

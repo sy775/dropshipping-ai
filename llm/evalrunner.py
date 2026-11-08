@@ -1,11 +1,13 @@
 """Runner d'évaluation : rejoue les cas evals/<agent>/*.yaml sur un ou plusieurs modèles et écrit un rapport.
 
     python -m llm.evalrunner --agent sav --models claude-haiku-5-5,stub-alt [--live] [--repeat N] [--max-cost 1]
+                             [--show-outputs]
 
 - Dry-run par défaut (fournisseur simulé). --live n'a d'effet qu'avec LLM_LIVE=1 dans l'environnement.
 - Tous les appels passent par l'adaptateur, en mode sync, avec purpose="eval" (plafond eval de agents.yaml).
-- Critères vérifiables par code uniquement : champs requis, valeurs interdites, motifs requis, bornes
-  numériques, longueur, conformité au schéma.
+- Critères vérifiables par code uniquement : champs requis, valeurs exactes de champs, valeurs interdites
+  (dans tout le texte ou dans certains champs), motifs requis, bornes numériques, longueur, conformité au schéma.
+- --show-outputs affiche dans la console la sortie des cas synthétiques uniquement (jamais journal ni rapport).
 - Le runner ne modifie jamais la configuration : le modèle évalué est substitué dans une copie en mémoire.
   Le rapport est indicatif ; la décision de changer de modèle reste humaine.
 """
@@ -21,7 +23,7 @@ import statistics
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -77,20 +79,60 @@ def load_cases(agent: str, cases_dir: Path | None = None) -> list[Case]:
         messages = raw["input"].get("messages")
         if not isinstance(messages, list) or not messages:
             raise EvalError(f"{where} : input.messages doit être une liste non vide")
-        cases.append(Case(
+        case = Case(
             id=str(raw["id"]),
             synthetic=bool(raw.get("synthetic", False)),
             messages=messages,
             cache_prefix=raw["input"].get("cache_prefix"),
             schema=raw["schema"] if "schema" in raw else default_schema,
             expected=raw.get("expected") or {},
-        ))
+        )
+        _validate_expected(case, where)
+        cases.append(case)
     if not cases:
         raise EvalError(f"aucun cas dans {folder}")
     return cases
 
 
+def _forbidden(expected: dict[str, Any]) -> tuple[list, list[str] | None]:
+    """`forbidden_values` : liste (tout le texte) ou {values: [...], fields: [...]} (champs ciblés)."""
+    spec = expected.get("forbidden_values") or []
+    if isinstance(spec, dict):
+        return list(spec.get("values") or []), list(spec.get("fields") or [])
+    return list(spec), None
+
+
+def _validate_expected(case: Case, where: str) -> None:
+    exp = case.expected
+    spec = exp.get("forbidden_values")
+    if isinstance(spec, dict):
+        if set(spec) - {"values", "fields"}:
+            raise EvalError(f"{where} : forbidden_values n'accepte que values et fields")
+        values, fields = _forbidden(exp)
+        if not values or not fields:
+            raise EvalError(f"{where} : forbidden_values.values et forbidden_values.fields doivent être non vides")
+        if case.schema is None:
+            raise EvalError(f"{where} : forbidden_values.fields exige une sortie structurée (schema)")
+    elif spec is not None and not isinstance(spec, list):
+        raise EvalError(f"{where} : forbidden_values doit être une liste ou {{values, fields}}")
+    eq = exp.get("field_equals")
+    if eq is not None:
+        if not isinstance(eq, dict) or not eq:
+            raise EvalError(f"{where} : field_equals doit être un dictionnaire non vide {{champ: valeur}}")
+        if case.schema is None:
+            raise EvalError(f"{where} : field_equals exige une sortie structurée (schema)")
+
+
 # ====================================================================== critères (code uniquement)
+
+def _same(value: Any, wanted: Any) -> bool:
+    """Égalité stricte : False ne vaut pas 0, "1" ne vaut pas 1 ; 5 et 5.0 sont égaux."""
+    if isinstance(value, bool) or isinstance(wanted, bool):
+        return isinstance(value, bool) and isinstance(wanted, bool) and value is wanted
+    if isinstance(value, (int, float)) and isinstance(wanted, (int, float)):
+        return value == wanted
+    return type(value) is type(wanted) and value == wanted
+
 
 def _get_path(obj: Any, path: str) -> tuple[bool, Any]:
     cur = obj
@@ -110,10 +152,26 @@ def check(content: Any, expected: dict[str, Any]) -> list[str]:
         found, value = _get_path(content, path) if isinstance(content, dict) else (False, None)
         if not found or value in (None, "", [], {}):
             failures.append(f"champ requis absent ou vide : {path}")
-    low = text.lower()
-    for i, value in enumerate(expected.get("forbidden_values", [])):
-        if str(value).lower() in low:
-            failures.append(f"valeur interdite n°{i + 1} présente")       # la valeur n'est pas recopiée
+    for path, wanted in (expected.get("field_equals") or {}).items():
+        found, value = _get_path(content, path) if isinstance(content, dict) else (False, None)
+        if not found:
+            failures.append(f"champ absent : {path}")
+        elif not _same(value, wanted):
+            failures.append(f"{path} différent de la valeur attendue")    # la valeur obtenue n'est pas recopiée
+    values, fields = _forbidden(expected)
+    if fields is None:
+        scopes = [("", text)]
+    else:
+        scopes = []
+        for path in fields:
+            found, value = _get_path(content, path) if isinstance(content, dict) else (False, None)
+            if found and value is not None:
+                scopes.append((f" dans {path}", value if isinstance(value, str)
+                               else json.dumps(value, ensure_ascii=False)))
+    for i, value in enumerate(values):
+        for where, scope in scopes:
+            if str(value).lower() in scope.lower():
+                failures.append(f"valeur interdite n°{i + 1} présente{where}")   # la valeur n'est pas recopiée
     for pattern in expected.get("required_patterns", []):
         if not re.search(pattern, text):
             failures.append(f"motif requis absent : {pattern}")
@@ -172,8 +230,14 @@ def _row(rt: Runtime, call_id: str | None):
     return rt.conn.execute("SELECT cost_usd, latency_ms FROM llm_calls WHERE call_id = ?", (call_id,)).fetchone()
 
 
+OutputHook = Callable[[Case, "Run", Any], None]
+
+
 def run_eval(agent: str, models: list[str], *, runtime: Runtime, live: bool = False, repeat: int = 1,
-             max_cost: float = DEFAULT_MAX_COST, cases_dir: Path | None = None) -> dict[str, Any]:
+             max_cost: float = DEFAULT_MAX_COST, cases_dir: Path | None = None,
+             on_output: OutputHook | None = None) -> dict[str, Any]:
+    """`on_output(case, run, content)` reçoit la sortie de chaque appel abouti ; elle n'entre jamais dans
+    le rapport ni dans le journal."""
     if repeat < 1:
         raise EvalError("--repeat doit être >= 1")
     cases = load_cases(agent, cases_dir)
@@ -193,14 +257,17 @@ def run_eval(agent: str, models: list[str], *, runtime: Runtime, live: bool = Fa
                     stop_reason = f"arrêt : --max-cost {max_cost:g} $ atteint ({spent:.4f} $ dépensés)"
                     run.failures = [stop_reason]
                     continue
-                _execute(rt, agent, case, run)
+                content = _execute(rt, agent, case, run)
+                if on_output is not None and run.status in ("passed", "failed"):
+                    on_output(case, run, content)
                 spent += run.cost_usd if live else 0.0
                 if run.status == "error" and run.failures and run.failures[0].startswith("plafond"):
                     stop_reason = f"arrêt : {run.failures[0]}"
     return _report(agent, models, runs, live, repeat, max_cost, spent, stop_reason)
 
 
-def _execute(rt: Runtime, agent: str, case: Case, run: Run) -> None:
+def _execute(rt: Runtime, agent: str, case: Case, run: Run) -> Any:
+    content = None
     try:
         res = adapter.call(agent, None, case.messages, schema=case.schema, mode="sync",
                            cache_prefix=case.cache_prefix, purpose="eval", runtime=rt)
@@ -215,12 +282,13 @@ def _execute(rt: Runtime, agent: str, case: Case, run: Run) -> None:
     except (LLMCallError, GuardError) as exc:
         run.status, run.failures = "error", [redact(str(exc))[:200]]
     else:
-        run.call_id = res.call_id
-        run.failures = check(res.content, case.expected)
+        run.call_id, content = res.call_id, res.content
+        run.failures = check(content, case.expected)
         run.status = "failed" if run.failures else "passed"
     row = _row(rt, run.call_id)
     if row is not None:
         run.cost_usd, run.latency_ms = float(row["cost_usd"] or 0), row["latency_ms"]
+    return content
 
 
 # ====================================================================== rapport
@@ -304,6 +372,17 @@ def write_report(report: dict[str, Any], out_dir: Path | None = None) -> tuple[P
 
 # ====================================================================== CLI
 
+def print_output(case: Case, run: Run, content: Any, out=None) -> None:
+    """--show-outputs : console uniquement, et seulement pour un cas synthétique."""
+    out = out or sys.stdout
+    head = f"--- {run.model} / {case.id} #{run.repeat} ({run.status})"
+    if not case.synthetic:
+        print(f"{head} : affichage refusé (cas non synthétique) ---", file=out)
+        return
+    body = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2)
+    print(f"{head} ---\n{body}", file=out)
+
+
 def main(argv: list[str] | None = None, runtime: Runtime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m llm.evalrunner", description=__doc__.splitlines()[0])
     parser.add_argument("--agent", required=True)
@@ -313,6 +392,8 @@ def main(argv: list[str] | None = None, runtime: Runtime | None = None) -> int:
     parser.add_argument("--max-cost", type=float, default=DEFAULT_MAX_COST, help="plafond du run en $ (live)")
     parser.add_argument("--cases-dir", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--show-outputs", action="store_true",
+                        help="affiche la sortie des cas synthétiques (console uniquement)")
     args = parser.parse_args(argv)
 
     rt = runtime or Runtime.from_env()
@@ -322,7 +403,8 @@ def main(argv: list[str] | None = None, runtime: Runtime | None = None) -> int:
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     try:
         report = run_eval(args.agent, models, runtime=rt, live=args.live, repeat=args.repeat,
-                          max_cost=args.max_cost, cases_dir=args.cases_dir)
+                          max_cost=args.max_cost, cases_dir=args.cases_dir,
+                          on_output=print_output if args.show_outputs else None)
     except (EvalError, ConfigError) as exc:
         print(f"erreur : {exc}", file=sys.stderr)
         return 2
