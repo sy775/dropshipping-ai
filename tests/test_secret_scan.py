@@ -78,6 +78,12 @@ def test_redact_regex_is_the_only_tree_exception(repo):
     assert [f.path for f in scan(repo)] == ["journal/autre.py"]
 
 
+def test_redact_exception_does_not_cover_a_key_after_the_regex(repo):
+    # Critic, point bloquant 2 : seule la regex elle-même est exemptée, pas le reste de la ligne.
+    _write(repo, "journal/redact.py", f'    re.compile(r"x"),  # {KEY}\n')
+    assert [(f.scope, f.path) for f in scan(repo, history=False)] == [("tree", "journal/redact.py")]
+
+
 def test_bearer_exception_is_history_only_and_file_specific(repo):
     line = f'    text = f"key=x {fake_bearer()}"\n'
     _write(repo, "tests/test_alerts.py", line)
