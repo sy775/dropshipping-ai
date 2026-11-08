@@ -68,6 +68,11 @@ estimation:
 batch:
   stale_after_hours: 24
 
+# Une réservation `pending` (appel synchrone) plus vieille que ce délai est considérée comme abandonnée
+# (processus tué avant d'écrire le résultat) : elle est libérée à la prochaine réservation, avec alerte.
+reservations:
+  pending_ttl_minutes: 15
+
 retry:
   max_retries: 2
   base_delay_s: 2        # délais : 2 s puis 4 s

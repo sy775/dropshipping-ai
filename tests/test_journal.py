@@ -6,6 +6,7 @@ from journal import db
 
 TS_NOV = dt.datetime(2026, 11, 8, 12, 0, tzinfo=dt.timezone.utc)
 TS_OCT = dt.datetime(2026, 10, 31, 23, 59, tzinfo=dt.timezone.utc)
+ALL_VERSIONS = sorted(f.stem for f in db.MIGRATIONS_DIR.glob("*.sql"))
 
 EXPECTED_COLUMNS = {
     "call_id", "ts", "shop_id", "agent", "provider", "model", "mode", "purpose",
@@ -28,17 +29,17 @@ def test_migrations_are_replayable(tmp_path):
     c1.close()
     c2 = db.connect(path)  # rejoue : ne doit rien réappliquer ni échouer
     versions = [r[0] for r in c2.execute("SELECT version FROM schema_version")]
-    assert versions == ["001_llm_calls"]
+    assert versions == ALL_VERSIONS
     assert db.apply_migrations(c2) == []
 
 
 def test_new_migration_applied_once(tmp_path):
     mig = tmp_path / "migrations"
     shutil.copytree(db.MIGRATIONS_DIR, mig)
-    (mig / "002_extra.sql").write_text("CREATE TABLE extra (x INTEGER);", encoding="utf-8")
+    (mig / "999_extra.sql").write_text("CREATE TABLE extra (x INTEGER);", encoding="utf-8")
     conn = db.connect(tmp_path / "j.sqlite", migrations_dir=mig)
     assert db.apply_migrations(conn, mig) == []
-    assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == len(ALL_VERSIONS) + 1
 
 
 def test_table_holds_only_metrics():
@@ -99,9 +100,9 @@ def test_failed_migration_rolls_back(tmp_path):
     import sqlite3
     mig = tmp_path / "migrations"
     shutil.copytree(db.MIGRATIONS_DIR, mig)
-    (mig / "002_broken.sql").write_text("CREATE TABLE ok_t (x INTEGER); SELECT * FROM absente;", encoding="utf-8")
+    (mig / "999_broken.sql").write_text("CREATE TABLE ok_t (x INTEGER); SELECT * FROM absente;", encoding="utf-8")
     with pytest.raises(sqlite3.Error):
         db.connect(tmp_path / "j.sqlite", migrations_dir=mig)
     conn = db.connect(tmp_path / "j.sqlite")  # sans la migration cassée
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='ok_t'").fetchone() is None
-    assert [r[0] for r in conn.execute("SELECT version FROM schema_version")] == ["001_llm_calls"]
+    assert [r[0] for r in conn.execute("SELECT version FROM schema_version")] == ALL_VERSIONS

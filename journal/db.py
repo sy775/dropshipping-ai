@@ -118,6 +118,20 @@ def month_spend(conn: sqlite3.Connection, month: str, purpose: str, shop_id: str
     return float(conn.execute(sql, args).fetchone()[0])
 
 
+def expire_pending(conn: sqlite3.Connection, now: dt.datetime, ttl_minutes: float) -> list[sqlite3.Row]:
+    """Passe en `abandoned` (cost_usd = 0) les réservations `pending` plus vieilles que `ttl_minutes`.
+    À appeler dans la transaction de réservation. Renvoie les lignes libérées (avant mise à jour)."""
+    cutoff = now - dt.timedelta(minutes=ttl_minutes)
+    expired = [r for r in conn.execute("SELECT call_id, ts, agent, shop_id, purpose, cost_usd FROM llm_calls "
+                                       "WHERE status = 'pending' ORDER BY ts")
+               if dt.datetime.fromisoformat(r["ts"]) <= cutoff]
+    for r in expired:
+        conn.execute("UPDATE llm_calls SET status = 'abandoned', cost_usd = 0, error = ? "
+                     "WHERE call_id = ? AND status = 'pending'",
+                     (f"réservation expirée (> {ttl_minutes:g} min) : {r['cost_usd']:.4f} $ libérés", r["call_id"]))
+    return expired
+
+
 def record_alert_once(conn: sqlite3.Connection, key: str, ts: dt.datetime) -> bool:
     """Enregistre une clé d'alerte. Renvoie False si elle existait déjà (alerte déjà envoyée)."""
     cur = conn.execute("INSERT OR IGNORE INTO llm_alerts (alert_key, ts) VALUES (?, ?)", (key, ts.isoformat()))

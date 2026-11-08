@@ -61,6 +61,7 @@ class Settings:
     batch_stale_hours: float
     max_retries: int
     retry_base_delay_s: float
+    pending_ttl_minutes: float = 15.0        # au-delà, une réservation `pending` est abandonnée
 
     def agent(self, name: str) -> AgentConfig:
         if name not in self.agents:
@@ -153,6 +154,10 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
         raise ConfigError("retry.max_retries : entier entre 0 et 2 (règle 6)")
     if not est.get("chars_per_token"):
         raise ConfigError("estimation.chars_per_token doit être > 0")
+    reservations = data.get("reservations") or {}          # section optionnelle, défaut 15 min
+    ttl = _positive_number(reservations.get("pending_ttl_minutes", 15), "reservations.pending_ttl_minutes")
+    if ttl <= 0:
+        raise ConfigError("reservations.pending_ttl_minutes doit être > 0")
     return Settings(
         agents=agents,
         budgets=budgets,
@@ -161,6 +166,7 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
         batch_stale_hours=_positive_number(_require(batch, "stale_after_hours", "batch"), "stale_after_hours"),
         max_retries=max_retries,
         retry_base_delay_s=_positive_number(_require(retry, "base_delay_s", "retry"), "base_delay_s"),
+        pending_ttl_minutes=ttl,
     )
 
 

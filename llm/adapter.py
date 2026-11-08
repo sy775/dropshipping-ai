@@ -147,6 +147,25 @@ class _Ctx:
         guards.threshold_alerts(self.rt.conn, self.caps, self.month, self.rt.settings.budgets.alert_ratio,
                                 self.rt.notifier, self.now)
 
+    def expire_orphans(self) -> list:
+        """Libère les réservations `pending` expirées. À appeler en tête de la transaction de réservation."""
+        expired = db.expire_pending(self.rt.conn, self.now, self.rt.settings.pending_ttl_minutes)
+        for r in expired:
+            log.warning("réservation pending abandonnée : call_id=%s agent=%s ts=%s %.4f $ libérés",
+                        r["call_id"], r["agent"], r["ts"], r["cost_usd"])
+        return expired
+
+    def alert_orphans(self, expired: list) -> None:
+        """Alerte (hors transaction, une fois par jour) si des réservations ont été abandonnées."""
+        if not expired:
+            return
+        if db.record_alert_once(self.rt.conn, f"pending_abandoned:{self.now.date().isoformat()}", self.now):
+            total = sum(r["cost_usd"] for r in expired)
+            notify(self.rt.notifier,
+                   f"{len(expired)} réservation(s) LLM 'pending' abandonnée(s) "
+                   f"(> {self.rt.settings.pending_ttl_minutes:g} min, processus interrompu ?) : "
+                   f"{total:.4f} $ libérés. Voir llm_calls status='abandoned'.")
+
     def check_long_prompt(self, usage: Usage, call_id: str) -> None:
         if usage.prompt_tokens > LONG_PROMPT_TOKENS:
             notify(self.rt.notifier,
@@ -204,6 +223,7 @@ def _call_sync(ctx: _Ctx, messages, schema, cache_prefix, tools) -> LLMResult:
         # Contrôle du plafond + réservation du coût estimé, atomiquement (ligne "pending").
         refused = None
         with db.transaction(rt.conn):
+            expired = ctx.expire_orphans()
             try:
                 guards.check_budget(rt.conn, ctx.caps, ctx.month, est.cost_usd)
             except BudgetExceeded as exc:
@@ -211,6 +231,7 @@ def _call_sync(ctx: _Ctx, messages, schema, cache_prefix, tools) -> LLMResult:
             else:
                 call_id = db.insert_call(rt.conn, **ctx.row(status="pending", cost_usd=est.cost_usd,
                                                             attempt=attempt, **estimates))
+        ctx.alert_orphans(expired)
         if refused:
             ctx.refuse_budget(refused, attempt=attempt, **estimates)
             raise refused
@@ -269,12 +290,14 @@ def _submit_batch(ctx: _Ctx, conversations, schema, cache_prefix, tools) -> Batc
     # Règle 2 : réservation du coût maximal avant l'envoi, atomique avec le contrôle.
     refused = None
     with db.transaction(rt.conn):
+        expired = ctx.expire_orphans()
         try:
             guards.check_budget(rt.conn, ctx.caps, ctx.month, total)
         except BudgetExceeded as exc:
             refused = exc
         else:
             call_id = db.insert_call(rt.conn, **ctx.row(status="reserved", cost_usd=total, **estimates))
+    ctx.alert_orphans(expired)
     if refused:
         ctx.refuse_budget(refused, **estimates)
         raise refused
