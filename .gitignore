@@ -16,5 +16,5 @@ data/
 *.db
 
 docs/business-plan.md
-specs/niches/
+# Fiches de niche : private/niches/ (couvert par private/)
 private/
