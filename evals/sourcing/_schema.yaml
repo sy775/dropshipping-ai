@@ -1,0 +1,21 @@
+# Schéma de sortie par défaut des cas de cet agent (structured outputs : additionalProperties false).
+type: object
+additionalProperties: false
+required:
+- fournisseur
+- pays
+- prix_unitaire_eur
+- delai_jours
+- conforme_ue
+- motif
+properties:
+  fournisseur: &id001
+    type: string
+  pays: *id001
+  prix_unitaire_eur:
+    type: number
+  delai_jours:
+    type: integer
+  conforme_ue:
+    type: boolean
+  motif: *id001

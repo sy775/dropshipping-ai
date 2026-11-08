@@ -149,13 +149,29 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 - Tests hors `live` : une fixture automatique retire `LLM_LIVE` et les identifiants Anthropic de l'environnement
   et bloque tout accès réseau.
 
-## Évaluation
-- Format d'un cas : `id`, `input`, `expected` (critères vérifiables par code : champs requis, mots interdits,
-  valeurs numériques) et, pour les sorties libres, une grille de critères notés 0/1.
-- Les cas d'exemple écrits à la main portent `synthetic: true` ; le rapport les signale.
-- Le rapport donne, par modèle : score, coût total, latence médiane, nombre d'échecs de format.
-- Le runner ne change jamais la configuration : il produit un rapport, la décision reste humaine.
-- Jeu de départ : 5 cas par agent, à compléter avec des cas réels au fil des runs (cible : 15 à 20).
+## Évaluation (`llm/evalrunner.py`)
+- Commande : `python -m llm.evalrunner --agent sav --models claude-haiku-5-5,stub-alt [--live] [--repeat N]
+  [--max-cost 1]`. Dry-run par défaut ; `--live` n'a d'effet qu'avec `LLM_LIVE=1` (sinon code de sortie 2, rien
+  n'est lancé).
+- Cas : `evals/<agent>/<id>.yaml` (`id`, `synthetic`, `input.messages`, `input.cache_prefix`, `schema` facultatif,
+  `expected`). `evals/<agent>/_schema.yaml` est le schéma par défaut de l'agent ; `schema: null` = texte libre.
+- Critères, vérifiables par code uniquement : `required_fields` (chemins pointés, non vides), `forbidden_values`
+  (sous-chaînes, insensible à la casse), `required_patterns` (expressions régulières), `numeric_bounds` (`min`/`max`),
+  `max_length` (caractères), conformité au schéma (validée par l'adaptateur : échec de format sinon).
+  Un cas est réussi si tous ses critères passent ; score = cas réussis / cas exécutés. Les messages d'échec ne
+  recopient jamais une valeur interdite et passent par `redact`.
+- Appels via l'adaptateur, mode `sync`, `purpose="eval"` (plafond eval de 5 \$/mois). Le modèle évalué est substitué
+  dans une copie en mémoire des réglages : aucun fichier de configuration n'est modifié. Le fournisseur d'un modèle
+  est lu dans `prices.yaml` ; modèle inconnu = erreur.
+- `--repeat N` rejoue chaque cas N fois. `--max-cost` (1 \$ par défaut, en `--live`) : le run s'arrête avant
+  l'appel dont le coût estimé ferait dépasser ce montant ; le plafond eval mensuel arrête aussi le run.
+- Rapport Markdown + JSON dans `data/reports/` : par modèle, score, coût, latence médiane, échecs de format,
+  incomplets, refus, erreurs, ignorés, exécutions synthétiques. Marqué « indicatif » et « coût au tarif sync »
+  (les agents en lot coûteraient environ moitié moins). Le runner ne change jamais la configuration : la décision
+  reste humaine.
+- Jeu de départ : 5 cas synthétiques par agent (dont 2 injections de prompt pour veille, une injection pour sav
+  et sourcing, un message SAV contenant l'email du client), à compléter avec des cas réels (cible : 15 à 20).
+  L'email d'un cas ne doit apparaître ni dans le journal ni dans les rapports (testé).
 
 ## Critères de test (aucun appel réel au fournisseur : clients simulés)
 - Un appel simulé écrit une ligne dans `llm_calls` avec un coût égal au calcul manuel (3 cas de tarifs, dont un en cache).
@@ -167,7 +183,7 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 - L'ajout d'un second fournisseur (stub) ne modifie que `llm/providers` et `agents.yaml`. Contrôle permanent
   (AST) : `llm/adapter.py` et `llm/guards.py` n'importent aucun fournisseur ni le SDK (seul `llm.providers.base`).
 - Chaque motif d'arrêt est testé ; coût et estimation des recherches web ; réservation d'un lot veille avec recherches.
-- Le runner d'évaluation produit un rapport comparatif sur 2 modèles simulés.
+- Le runner d'évaluation produit un rapport comparatif sur 2 modèles simulés, sans modifier la configuration.
 - Un lot réservé puis collecté remplace la réservation par le coût réel (cumul exact après collecte).
 - Deux lots successifs dont la somme des réservations dépasse le plafond : le second est refusé.
 - Un appel `eval` ne fait pas bouger le cumul de production, et inversement.

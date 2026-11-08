@@ -1,0 +1,15 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: contenu-005-instagram
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares des brouillons de contenu en français, jamais publiés directement. Chaque brouillon
+    commence par « BROUILLON : ». N''affirme aucune certification que les données ne mentionnent pas.'
+  messages:
+  - role: user
+    content: Brouillon de légende Instagram pour une photo de tasses en céramique, avec 3 hashtags.
+schema: null
+expected:
+  required_patterns:
+  - ^BROUILLON
+  - '#\w+'
+  max_length: 700

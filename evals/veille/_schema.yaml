@@ -1,0 +1,18 @@
+# Schéma de sortie par défaut des cas de cet agent (structured outputs : additionalProperties false).
+type: object
+additionalProperties: false
+required:
+- niche
+- score
+- signaux
+- risques
+properties:
+  niche:
+    type: string
+  score:
+    type: integer
+  signaux: &id001
+    type: array
+    items:
+      type: string
+  risques: *id001

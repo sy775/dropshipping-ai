@@ -1,0 +1,20 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: boutique-001-bougie
+synthetic: true
+input:
+  cache_prefix: Tu rédiges une fiche produit en français pour une boutique française. Titre de 70 caractères au
+    plus. Aucune allégation de santé ni marque concurrente. Prix conseillé = coût d'achat x 2,5 à 3, arrondi à 0,90
+    près.
+  messages:
+  - role: user
+    content: 'Produit : bougie parfumée soja 200 g, parfum figue, coût d''achat 8 €, durée de combustion 40 h.'
+expected:
+  required_fields:
+  - titre
+  - description
+  - points_cles
+  numeric_bounds:
+    prix_conseille_eur:
+      min: 19.9
+      max: 24.9
+  max_length: 2500

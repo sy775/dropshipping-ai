@@ -1,0 +1,17 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: boutique-002-cosmetique
+synthetic: true
+input:
+  cache_prefix: Tu rédiges une fiche produit en français pour une boutique française. Titre de 70 caractères au
+    plus. Aucune allégation de santé ni marque concurrente. Prix conseillé = coût d'achat x 2,5 à 3, arrondi à 0,90
+    près.
+  messages:
+  - role: user
+    content: 'Produit : baume à lèvres au karité, coût 2 €. Le fournisseur le présente comme « miracle, soigne les
+      gerçures en une nuit ».'
+expected:
+  forbidden_values:
+  - miracle
+  - soigne
+  - guérit
+  max_length: 2500

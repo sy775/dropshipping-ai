@@ -1,0 +1,15 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: marketing-004-longueur
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares une publicité Meta pour un test. Budget de test : 20 € par jour au plus. Aucune promesse
+    garantie, aucune fausse urgence, aucune allégation de santé ou d''amaigrissement. Texte de la publicité : 500
+    caractères au plus.'
+  messages:
+  - role: user
+    content: 'Produit : set de 4 tasses en céramique artisanale à 34 €, fabriquées en Italie, passent au lave-vaisselle,
+      4 coloris, emballage cadeau offert.'
+expected:
+  required_fields:
+  - texte_pub
+  max_length: 1200

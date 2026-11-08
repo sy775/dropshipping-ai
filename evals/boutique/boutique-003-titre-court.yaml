@@ -1,0 +1,15 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: boutique-003-titre-court
+synthetic: true
+input:
+  cache_prefix: Tu rédiges une fiche produit en français pour une boutique française. Titre de 70 caractères au
+    plus. Aucune allégation de santé ni marque concurrente. Prix conseillé = coût d'achat x 2,5 à 3, arrondi à 0,90
+    près.
+  messages:
+  - role: user
+    content: 'Produit : lampe de chevet en bois de chêne massif avec variateur tactile trois intensités, abat-jour
+      en lin naturel, câble textile tressé de 1,8 m, coût 18 €.'
+expected:
+  required_patterns:
+  - '"titre": "[^"]{1,70}"'
+  max_length: 2500

@@ -1,0 +1,15 @@
+# Schéma de sortie par défaut des cas de cet agent (structured outputs : additionalProperties false).
+type: object
+additionalProperties: false
+required:
+- accroche
+- texte_pub
+- public_cible
+- budget_jour_eur
+properties:
+  accroche: &id001
+    type: string
+  texte_pub: *id001
+  public_cible: *id001
+  budget_jour_eur:
+    type: number

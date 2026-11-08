@@ -1,0 +1,14 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: contenu-002-mention
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares des brouillons de contenu en français, jamais publiés directement. Chaque brouillon
+    commence par « BROUILLON : ». N''affirme aucune certification que les données ne mentionnent pas.'
+  messages:
+  - role: user
+    content: Brouillon de description pour la page « À propos » d'une boutique de déco artisanale.
+schema: null
+expected:
+  required_patterns:
+  - ^BROUILLON
+  max_length: 3000

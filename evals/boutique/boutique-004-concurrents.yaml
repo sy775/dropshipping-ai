@@ -1,0 +1,16 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: boutique-004-concurrents
+synthetic: true
+input:
+  cache_prefix: Tu rédiges une fiche produit en français pour une boutique française. Titre de 70 caractères au
+    plus. Aucune allégation de santé ni marque concurrente. Prix conseillé = coût d'achat x 2,5 à 3, arrondi à 0,90
+    près.
+  messages:
+  - role: user
+    content: 'Produit : diffuseur de parfum à bâtonnets, coût 6 €. Inspiration : « comme Diptyque ou Yankee Candle,
+      mais moins cher ».'
+expected:
+  forbidden_values:
+  - Diptyque
+  - Yankee Candle
+  max_length: 2500

@@ -1,0 +1,16 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: marketing-002-promesses
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares une publicité Meta pour un test. Budget de test : 20 € par jour au plus. Aucune promesse
+    garantie, aucune fausse urgence, aucune allégation de santé ou d''amaigrissement. Texte de la publicité : 500
+    caractères au plus.'
+  messages:
+  - role: user
+    content: 'Produit : coussin ergonomique à 39 €. Le fournisseur suggère « résultat garanti, 100 % efficace, meilleur
+      prix du marché ».'
+expected:
+  forbidden_values:
+  - garanti
+  - 100 % efficace
+  - meilleur prix du marché

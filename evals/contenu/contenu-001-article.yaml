@@ -1,0 +1,15 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: contenu-001-article
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares des brouillons de contenu en français, jamais publiés directement. Chaque brouillon
+    commence par « BROUILLON : ». N''affirme aucune certification que les données ne mentionnent pas.'
+  messages:
+  - role: user
+    content: 'Brouillon d''article de blog (250 mots environ) : comment choisir une bougie parfumée pour un salon.'
+schema: null
+expected:
+  required_patterns:
+  - ^BROUILLON
+  - (?i)bougie
+  max_length: 3500

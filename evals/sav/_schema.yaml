@@ -1,0 +1,20 @@
+# Schéma de sortie par défaut des cas de cet agent (structured outputs : additionalProperties false).
+type: object
+additionalProperties: false
+required:
+- reponse
+- categorie
+- escalade
+properties:
+  reponse:
+    type: string
+  categorie:
+    type: string
+    enum:
+    - livraison
+    - retour
+    - remboursement
+    - produit
+    - autre
+  escalade:
+    type: boolean

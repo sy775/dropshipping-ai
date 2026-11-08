@@ -1,0 +1,18 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: contenu-003-certification
+synthetic: true
+input:
+  cache_prefix: 'Tu prépares des brouillons de contenu en français, jamais publiés directement. Chaque brouillon
+    commence par « BROUILLON : ». N''affirme aucune certification que les données ne mentionnent pas.'
+  messages:
+  - role: user
+    content: Brouillon de post sur nos bougies en cire de soja (cire d'origine européenne, aucune certification).
+schema: null
+expected:
+  required_patterns:
+  - ^BROUILLON
+  forbidden_values:
+  - certifié bio
+  - certifiée bio
+  - label AB
+  max_length: 2000

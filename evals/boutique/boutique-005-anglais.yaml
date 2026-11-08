@@ -1,0 +1,18 @@
+# Cas synthétique écrit à la main (session 2). Critères vérifiables par code uniquement.
+id: boutique-005-anglais
+synthetic: true
+input:
+  cache_prefix: Tu rédiges une fiche produit en français pour une boutique française. Titre de 70 caractères au
+    plus. Aucune allégation de santé ni marque concurrente. Prix conseillé = coût d'achat x 2,5 à 3, arrondi à 0,90
+    près.
+  messages:
+  - role: user
+    content: 'Product data (supplier, English): scented soy candle, 300 g, vanilla, 60 hours burn time. Cost: 10
+      EUR.'
+expected:
+  required_patterns:
+  - (?i)\b(le|la|les|des|pour|avec)\b
+  numeric_bounds:
+    prix_conseille_eur:
+      min: 24.9
+      max: 30.9

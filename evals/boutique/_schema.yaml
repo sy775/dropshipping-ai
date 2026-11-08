@@ -1,0 +1,18 @@
+# Schéma de sortie par défaut des cas de cet agent (structured outputs : additionalProperties false).
+type: object
+additionalProperties: false
+required:
+- titre
+- description
+- points_cles
+- prix_conseille_eur
+properties:
+  titre: &id001
+    type: string
+  description: *id001
+  points_cles:
+    type: array
+    items:
+      type: string
+  prix_conseille_eur:
+    type: number
