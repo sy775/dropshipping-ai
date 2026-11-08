@@ -85,7 +85,7 @@ def test_refusal_raises_logs_cost_no_retry_and_alerts_once_per_day(make_runtime)
 def test_schema_not_checked_on_incomplete_answer(make_runtime):
     rt = make_runtime(provider=answering("max_tokens", text='{"prix": 1'))
     with pytest.raises(LLMIncompleteError):
-        adapter.call("sav", "shop-a", MSG, schema={"type": "object"}, runtime=rt)
+        adapter.call("sav", "shop-a", MSG, schema={"type": "object", "additionalProperties": False}, runtime=rt)
     assert rows(rt)[0]["status"] == "incomplete"
 
 

@@ -139,6 +139,20 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
    même règle (`content = None`). Le schéma n'est validé que sur une réponse complète.
    `ProviderResponse.stop_reason` est obligatoire (aucune valeur par défaut) : tout fournisseur, réel ou simulé,
    le renseigne explicitement.
+9. Schéma de sortie : avant toute réservation et tout appel, `guards.check_schema` contrôle récursivement le
+   schéma (objets imbriqués, `items`, `anyOf`/`allOf`, `$defs`). Liste blanche tirée de la doc officielle
+   « Structured outputs » (sections « JSON Schema limitations », « Schema complexity limits ») :
+   - mots-clés acceptés : `type` (object, array, string, integer, number, boolean, null), `properties`,
+     `required`, `additionalProperties` (obligatoirement `false` sur chaque objet), `items`, `enum` (valeurs
+     simples), `const`, `anyOf`, `allOf` (sans `$ref`), `$ref` interne, `$defs`, `definitions`, `default`,
+     `format` (date-time, time, date, duration, email, hostname, uri, ipv4, ipv6, uuid), `minItems` (0 ou 1),
+     `pattern` (sans référence arrière, assertion, ``, ni quantificateur au-delà de 100), plus les annotations
+     `description` et `title` ;
+   - refusés : schéma récursif, `$ref` externe ou introuvable, `minimum`/`maximum`/`multipleOf`,
+     `minLength`/`maxLength`, `maxItems`, `uniqueItems`, `oneOf`, `not`, tout autre mot-clé ;
+   - limites : 24 paramètres optionnels et 16 paramètres à type union au total.
+   Refus = `SchemaNotSupported` (garde-fou) : aucun appel au fournisseur, ligne `refused`, coût 0, `stop_reason`
+   NULL. Les contraintes non supportées (longueurs, bornes) se vérifient après coup, dans le code de l'agent.
 
 ## Fournisseur Anthropic (`llm/providers/anthropic.py`)
 - SDK Python officiel ; client créé au premier appel réel, `max_retries=0`, `timeout=timeout_s`. La clé est lue
@@ -204,3 +218,5 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
 - Une ligne `pending` de 3 h est libérée (`abandoned`, coût 0) ; une de 5 min ne l'est pas ; l'alerte part une fois par jour.
 - Plantage simulé entre l'envoi d'un lot et l'écriture de son identifiant : l'alerte de lot oublié part après 26 h (pas à 25 h).
 - Un lot envoyé le 30 et collecté le 2 du mois suivant est imputé au mois d'envoi.
+- Un schéma conforme est transmis ; un objet imbriqué sans `additionalProperties: false` est refusé sans appel
+  (ligne `refused`, coût 0), en sync comme en lot. Les schémas de `evals/` passent le contrôle.

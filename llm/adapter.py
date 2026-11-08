@@ -119,6 +119,7 @@ def call(agent: str, shop_id: str | None, messages: list, schema: dict | None = 
     try:
         guards.check_tools(cfg, tools)
         tools = _prepare_tools(ctx, tools)
+        guards.check_schema(schema)        # avant toute réservation : refus sans appel, coût 0
     except GuardError as exc:
         ctx.log_refusal(str(exc))
         raise
