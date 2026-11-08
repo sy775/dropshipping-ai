@@ -59,10 +59,17 @@ Sorties :
 ## Journal SQLite : table `llm_calls`
 Champs : `call_id`, `ts`, `shop_id`, `agent`, `provider`, `model`, `mode`, `purpose`, `tokens_in`,
 `tokens_out`, `tokens_cache_read`, `tokens_cache_write`, `tokens_in_estimated`, `tokens_out_estimated`,
-`cost_estimated_usd`, `cost_usd`, `latency_ms`, `status`, `error`, `attempt`, `batch_id`, `dry_run`.
+`cost_estimated_usd`, `cost_usd`, `latency_ms`, `status`, `error`, `attempt`, `batch_id`, `dry_run`,
+`billing_month` (migration 003).
 Aucune donnée client ni contenu de prompt dans cette table (uniquement des métriques).
-Une vue agrège le coût par mois, par agent, par boutique et par usage (`prod` / `eval`).
-Les migrations sont rejouables (table `schema_version`).
+Statuts (documentés dans la table `llm_call_statuses`, migration 002) : `pending` (appel synchrone en cours,
+coût estimé réservé), `ok`, `error`, `format_error`, `refused`, `reserved` (lot envoyé, coût maximal réservé),
+`released` (réservation de lot remplacée par le réel), `abandoned` (réservation `pending` expirée, `cost_usd = 0`).
+Mois de facturation : `billing_month` (`YYYY-MM`, UTC) est rempli à l'insertion avec le mois de `ts`, sauf pour
+les lignes réelles d'un lot, qui recopient celui de leur réservation (mois d'envoi). Les cumuls mensuels
+(`month_spend`) et la vue filtrent sur ce champ, pas sur `ts`.
+Une vue agrège le coût par mois de facturation, par agent, par boutique et par usage (`prod` / `eval`).
+Les migrations sont rejouables (table `schema_version`) ; une migration publiée n'est jamais modifiée.
 
 ## Estimation avant appel
 - Entrée estimée localement (caractères / 3,5), majorée de 20 %.
@@ -73,9 +80,21 @@ Les migrations sont rejouables (table `schema_version`).
 ## Règles (codées hors LLM)
 1. Plafond mensuel de dépense LLM, global et par boutique, lu dans la config. Avant chaque appel,
    le coût estimé est ajouté au cumul du mois. Si le plafond serait dépassé, l'appel est refusé et une alerte Telegram part.
+   Le contrôle et la réservation (ligne `pending`) sont faits dans une même transaction `BEGIN IMMEDIATE`.
+   Expiration : une ligne `pending` plus vieille que `reservations.pending_ttl_minutes` (`agents.yaml`, défaut 15)
+   est considérée comme abandonnée (processus tué avant d'écrire le résultat). À l'ouverture de chaque transaction
+   de réservation (sync et lot), elle passe en `abandoned` avec `cost_usd = 0`, l'expiration est journalisée
+   (champ `error` de la ligne et log applicatif) et une alerte Telegram part, une seule fois par jour.
+   Si l'appel finit malgré tout après l'expiration, sa ligne reprend le statut et le coût réels.
 2. Pour un lot (`batch`), le coût maximal estimé est réservé dans le cumul mensuel à l'envoi (ligne `reserved`
    liée au lot). Un lot dont la réservation dépasserait un plafond n'est pas envoyé. À la collecte, la réservation
    est remplacée par le coût réel au tarif batch. Un lot non collecté après 24 h déclenche une alerte.
+   Identifiant provisoire : la ligne `reserved` est écrite, dans la transaction de réservation, avec
+   `batch_id = pending-<call_id>` ; il est remplacé par l'identifiant du fournisseur après l'envoi. Si le processus
+   meurt entre les deux, `check_stale_batches` signale aussi ces réservations après 24 h (lot peut-être envoyé et
+   facturé : vérification manuelle chez le fournisseur ; la réservation reste comptée jusque-là).
+   Mois de facturation : les lignes réelles d'un lot sont imputées au mois d'envoi (`billing_month` de la
+   réservation), même si la collecte a lieu le mois suivant.
    La limite configurée chez le fournisseur peut être dépassée légèrement par un lot : elle ne sert pas de garde-fou.
 3. Outils autorisés par agent : liste blanche `allowed_tools` dans `agents.yaml` (vide ou absente = aucun outil).
    Tout outil absent de la liste est refusé, y compris pour `veille`. Seconde couche, indépendante de la config :
@@ -110,3 +129,6 @@ Les migrations sont rejouables (table `schema_version`).
 - Un appel `eval` ne fait pas bouger le cumul de production, et inversement.
 - Une entrée à 90 000 tokens estimés (108 000 avec la marge de 20 %) est facturée au palier supérieur dans l'estimation.
 - L'alerte à 80 % part une seule fois par mois et par plafond.
+- Une ligne `pending` de 3 h est libérée (`abandoned`, coût 0) ; une de 5 min ne l'est pas ; l'alerte part une fois par jour.
+- Plantage simulé entre l'envoi d'un lot et l'écriture de son identifiant : l'alerte de lot oublié part après 24 h.
+- Un lot envoyé le 30 et collecté le 2 du mois suivant est imputé au mois d'envoi.
