@@ -1,0 +1,469 @@
+# Catalogue de mutations des garde-fous (relectures externes, 2026-11-08).
+# Chaque entrée remplace `old` (présent exactement une fois dans `file`) par `new` ; au moins un test doit échouer.
+- id: m001
+  description: plafond global supprimé
+  file: llm/guards.py
+  old: caps = [Cap("prod:global", budgets.prod_global, "prod")]
+  new: caps = []
+- id: m002
+  description: plafond par boutique supprimé
+  file: llm/guards.py
+  old: caps.append(Cap(f"prod:shop:{shop_id}", budgets.shop_cap(shop_id), "prod", shop_id))
+  new: pass
+- id: m003
+  description: contrôle de plafond neutralisé (général)
+  file: llm/guards.py
+  old: 'if current + amount > cap.limit:'
+  new: 'if False:'
+- id: m004
+  description: 'sync : contrôle avec montant 0'
+  file: llm/adapter.py
+  old: guards.check_budget(rt.conn, ctx.caps, ctx.month, est.cost_usd)
+  new: guards.check_budget(rt.conn, ctx.caps, ctx.month, 0.0)
+- id: m005
+  description: 'sync : réservation pending à coût 0'
+  file: llm/adapter.py
+  old: status="pending", cost_usd=est.cost_usd
+  new: status="pending", cost_usd=0
+- id: m006
+  description: dry-run compté dans les cumuls
+  file: journal/db.py
+  old: WHERE dry_run = 0 AND purpose
+  new: WHERE 1 = 1 AND purpose
+- id: m007
+  description: 'outil web : couche 2 (mots-clés) retirée'
+  file: llm/guards.py
+  old: 'if is_web_tool(tool) and agent.name != WEB_AGENT:'
+  new: 'if False:'
+- id: m008
+  description: 'outil : liste blanche allowed_tools retirée'
+  file: llm/guards.py
+  old: 'if name not in agent.allowed_tools:'
+  new: 'if False:'
+- id: m009
+  description: check_tools jamais appelé
+  file: llm/adapter.py
+  old: guards.check_tools(cfg, tools)
+  new: pass
+- id: m010
+  description: 'batch : contrôle de plafond avec montant 0'
+  file: llm/adapter.py
+  old: guards.check_budget(rt.conn, ctx.caps, ctx.month, total)
+  new: guards.check_budget(rt.conn, ctx.caps, ctx.month, 0.0)
+- id: m011
+  description: 'batch : réservation à coût 0'
+  file: llm/adapter.py
+  old: status="reserved", cost_usd=total
+  new: status="reserved", cost_usd=0
+- id: m012
+  description: 'batch : réservation non libérée à la collecte'
+  file: llm/adapter.py
+  old: status="released", cost_usd=0)
+  new: status="released", cost_usd=res_row["cost_usd"])
+- id: m013
+  description: 'batch : remise 50 % non appliquée au réel'
+  file: llm/adapter.py
+  old: compute_cost(lookup.price, u, batch=True)
+  new: compute_cost(lookup.price, u, batch=False)
+- id: m014
+  description: 'retry : réservation non libérée après échec'
+  file: llm/adapter.py
+  old: status="error", cost_usd=0, latency_ms=latency,
+  new: status="error", cost_usd=est.cost_usd, latency_ms=latency,
+- id: m015
+  description: 'atomicité : BEGIN IMMEDIATE -> BEGIN'
+  file: journal/db.py
+  old: conn.execute("BEGIN IMMEDIATE")
+  new: conn.execute("BEGIN")
+- id: m016
+  description: alerte tarif absent/expiré supprimée
+  file: llm/adapter.py
+  old: 'if lookup.issue:'
+  new: 'if False:'
+- id: m017
+  description: alerte prompt > 100 000 supprimée
+  file: llm/adapter.py
+  old: 'if usage.prompt_tokens > LONG_PROMPT_TOKENS:'
+  new: 'if False:'
+- id: m018
+  description: alerte 80 % supprimée
+  file: llm/guards.py
+  old: 'if cap.limit > 0 and current >= ratio * cap.limit:'
+  new: 'if False:'
+- id: m019
+  description: 'alerte 80 % : plus de dédoublonnage'
+  file: llm/guards.py
+  old: 'if db.record_alert_once(conn, f"threshold:{cap.key}:{month}", now):'
+  new: 'if True:'
+- id: m020
+  description: redaction des erreurs retirée
+  file: llm/adapter.py
+  old: 'return redact(f"{type(exc).__name__}: {exc}")[:MAX_ERROR_LEN]'
+  new: 'return f"{type(exc).__name__}: {exc}"[:MAX_ERROR_LEN]'
+- id: m021
+  description: marge d'estimation 20 % -> 0
+  file: config/agents.yaml
+  old: 'input_margin: 0.20'
+  new: 'input_margin: 0.0'
+- id: m022
+  description: nouvelles tentatives 2 -> 0 (config)
+  file: config/agents.yaml
+  old: 'max_retries: 2'
+  new: 'max_retries: 0'
+- id: m023
+  description: 'TTL : aucune réservation libérée'
+  file: journal/db.py
+  old: if dt.datetime.fromisoformat(r["ts"]) <= cutoff]
+  new: if False]
+- id: m024
+  description: 'TTL : même les réservations fraîches libérées'
+  file: journal/db.py
+  old: if dt.datetime.fromisoformat(r["ts"]) <= cutoff]
+  new: if True]
+- id: m025
+  description: 'TTL : libération sans remise du coût à 0'
+  file: journal/db.py
+  old: SET status = 'abandoned', cost_usd = 0,
+  new: SET status = 'abandoned', cost_usd = cost_usd,
+- id: m026
+  description: expiration non appelée (sync)
+  file: llm/adapter.py
+  old: "with db.transaction(rt.conn):\n            expired = ctx.expire_orphans()"
+  new: "with db.transaction(rt.conn):\n            expired = []"
+- id: m027
+  description: expiration non appelée (batch)
+  file: llm/adapter.py
+  old: "with db.transaction(rt.conn):\n        expired = ctx.expire_orphans()"
+  new: "with db.transaction(rt.conn):\n        expired = []"
+- id: m028
+  description: alerte orphelins supprimée
+  file: llm/adapter.py
+  old: "        if not expired:\n            return"
+  new: '        return'
+- id: m029
+  description: 'alerte orphelins : plus de dédoublonnage'
+  file: llm/adapter.py
+  old: 'if db.record_alert_once(self.rt.conn, f"pending_abandoned:{self.now.date().isoformat()}", self.now):'
+  new: 'if True:'
+- id: m030
+  description: batch_id provisoire non écrit
+  file: llm/adapter.py
+  old: batch_id=f"{PROVISIONAL_BATCH_PREFIX}{call_id}"
+  new: batch_id=None
+- id: m031
+  description: lots provisoires ignorés par l'alerte périmée
+  file: llm/adapter.py
+  old: WHERE status = 'reserved' ORDER BY ts
+  new: WHERE status = 'reserved' AND batch_id IS NOT NULL AND batch_id NOT LIKE 'pending-%' ORDER BY ts
+- id: m032
+  description: mois de facturation d'un lot = mois de collecte
+  file: llm/adapter.py
+  old: billing_month = res_row["billing_month"] or res_row["ts"][:7]
+  new: billing_month = ctx.month
+- id: m033
+  description: TTL config 15 -> 100000 minutes
+  file: config/agents.yaml
+  old: 'pending_ttl_minutes: 15'
+  new: 'pending_ttl_minutes: 100000'
+- id: m034
+  description: max_tokens compté comme succès
+  file: llm/adapter.py
+  old: frozenset({"end_turn", "stop_sequence"})
+  new: frozenset({"end_turn", "stop_sequence", "max_tokens"})
+- id: m035
+  description: pause_turn compté comme succès
+  file: llm/adapter.py
+  old: frozenset({"end_turn", "stop_sequence"})
+  new: frozenset({"end_turn", "stop_sequence", "pause_turn"})
+- id: m036
+  description: stop_reason absent = succès
+  file: llm/adapter.py
+  old: 'if stop_reason in SUCCESS_STOPS:'
+  new: 'if stop_reason in SUCCESS_STOPS or stop_reason is None:'
+- id: m037
+  description: refus classé incomplet
+  file: llm/adapter.py
+  old: return "refused" if stop_reason == REFUSAL_STOP else "incomplete"
+  new: return "incomplete"
+- id: m038
+  description: contenu renvoyé malgré l'échec
+  file: llm/adapter.py
+  old: 'return status, None, f"{status}: stop_reason={resp.stop_reason}"'
+  new: 'return status, resp.text, f"{status}: stop_reason={resp.stop_reason}"'
+- id: m039
+  description: alerte de refus (sync) supprimée
+  file: llm/adapter.py
+  old: '        ctx.alert_refusal(call_id)
+
+    '
+  new: '        pass
+
+    '
+- id: m040
+  description: alerte de refus (lot) supprimée
+  file: llm/adapter.py
+  old: '        ctx.alert_refusal(refused_ids[0])
+
+    '
+  new: '        pass
+
+    '
+- id: m041
+  description: frais de recherche absents du coût réel
+  file: llm/pricing.py
+  old: return cost + search_cost(price, usage.web_search_requests)
+  new: return cost
+- id: m042
+  description: frais de recherche absents de l'estimation
+  file: llm/pricing.py
+  old: cost += search_cost(price, web_searches)
+  new: cost += 0
+- id: m043
+  description: tokens des recherches absents de l'estimation
+  file: llm/pricing.py
+  old: + web_searches * search_tokens_each
+  new: + 0
+- id: m044
+  description: max_uses non imposé à l'outil
+  file: llm/adapter.py
+  old: 'tool = {**tool, "max_uses": ctx.cfg.web_search_max_uses}'
+  new: tool = dict(tool)
+- id: m045
+  description: outil web sans max_uses accepté
+  file: llm/adapter.py
+  old: 'if ctx.cfg.web_search_max_uses is None:'
+  new: 'if False:'
+- id: m046
+  description: stub accepte la prod (appel)
+  file: llm/providers/stub_alt.py
+  old: '        if request.purpose == "prod":'
+  new: '        if False:'
+- id: m047
+  description: stub accepte la prod (lot)
+  file: llm/providers/stub_alt.py
+  old: 'if any(req.purpose == "prod" for _, req in items):'
+  new: 'if False:'
+- id: m048
+  description: 5xx/429 non retryable
+  file: llm/providers/anthropic.py
+  old: retryable=status in _RETRYABLE_STATUS or status >= 500
+  new: retryable=False
+- id: m049
+  description: 4xx retryable
+  file: llm/providers/anthropic.py
+  old: retryable=status in _RETRYABLE_STATUS or status >= 500
+  new: retryable=True
+- id: m050
+  description: coupure réseau non retryable
+  file: llm/providers/anthropic.py
+  old: return ProviderError(text, retryable=True)
+  new: return ProviderError(text, retryable=False)
+- id: m051
+  description: alerte 401 supprimée
+  file: llm/providers/anthropic.py
+  old: '        alert_once("anthropic:auth", '
+  new: '        (lambda *a: None)("anthropic:auth", '
+- id: m052
+  description: SDK avec reprises internes
+  file: llm/providers/anthropic.py
+  old: anthropic.Anthropic(max_retries=0, timeout=self.timeout_s)
+  new: anthropic.Anthropic(max_retries=2, timeout=self.timeout_s)
+- id: m053
+  description: délai SDK ignoré
+  file: llm/providers/anthropic.py
+  old: anthropic.Anthropic(max_retries=0, timeout=self.timeout_s)
+  new: anthropic.Anthropic(max_retries=0)
+- id: m054
+  description: cache_control retiré
+  file: llm/providers/anthropic.py
+  old: ', "cache_control": {"type": "ephemeral"}'
+  new: ''
+- id: m055
+  description: cache lu ignoré
+  file: llm/providers/anthropic.py
+  old: cache_read=_get(usage, "cache_read_input_tokens") or 0,
+  new: cache_read=0,
+- id: m056
+  description: cache écrit ignoré
+  file: llm/providers/anthropic.py
+  old: cache_write=_get(usage, "cache_creation_input_tokens") or 0,
+  new: cache_write=0,
+- id: m057
+  description: recherches de l'usage ignorées
+  file: llm/providers/anthropic.py
+  old: web_search_requests=_get(_get(usage, "server_tool_use"), "web_search_requests") or 0,
+  new: web_search_requests=0,
+- id: m058
+  description: lot non terminé lu comme terminé
+  file: llm/providers/anthropic.py
+  old: '!= "ended"'
+  new: == "jamais"
+- id: m059
+  description: effort non transmis
+  file: llm/providers/anthropic.py
+  old: '        output_config["effort"] = request.effort'
+  new: '        pass'
+- id: m060
+  description: schéma non transmis
+  file: llm/providers/anthropic.py
+  old: 'output_config["format"] = {"type": "json_schema", "schema": request.schema}'
+  new: pass
+- id: m061
+  description: délai >= TTL accepté
+  file: llm/config.py
+  old: 'if timeout >= pending_ttl_minutes * 60:'
+  new: 'if False:'
+- id: m062
+  description: évaluation en purpose prod
+  file: llm/evalrunner.py
+  old: purpose="eval", runtime=rt)
+  new: purpose="prod", runtime=rt)
+- id: m063
+  description: --max-cost ignoré
+  file: llm/evalrunner.py
+  old: 'if live and spent + _estimate(rt, agent, case) > max_cost:'
+  new: 'if False:'
+- id: m064
+  description: double verrou --live retiré
+  file: llm/evalrunner.py
+  old: 'if args.live and not (os.environ.get("LLM_LIVE") == "1" and rt.live):'
+  new: 'if False:'
+- id: m065
+  description: release sans --confirm
+  file: journal/release_reservation.py
+  old: '    if not confirm:'
+  new: '    if False:'
+- id: m066
+  description: 'release : âge minimal ignoré'
+  file: journal/release_reservation.py
+  old: 'if lost.age_hours < min_age_hours:'
+  new: 'if False:'
+- id: m067
+  description: 'release : ligne non provisoire acceptée'
+  file: journal/release_reservation.py
+  old: '    if not _is_provisional(row):'
+  new: '    if False:'
+- id: m068
+  description: 'attach : id provisoire accepté'
+  file: journal/release_reservation.py
+  old: 'if not batch_id or batch_id.startswith(PROVISIONAL_PREFIX):'
+  new: 'if not batch_id:'
+- id: m069
+  description: 'attach : doublon de lot accepté'
+  file: journal/release_reservation.py
+  old: 'if conn.execute("SELECT 1 FROM llm_calls WHERE batch_id = ?", (batch_id,)).fetchone():'
+  new: 'if False:'
+- id: m070
+  description: 'schéma : contrôle jamais appelé'
+  file: llm/adapter.py
+  old: '        guards.check_schema(schema)'
+  new: '        pass'
+- id: m071
+  description: 'schéma : additionalProperties non exigé'
+  file: llm/guards.py
+  old: 'and node.get("additionalProperties") is not False:'
+  new: 'and False:'
+- id: m072
+  description: 'schéma : mots-clés inconnus acceptés'
+  file: llm/guards.py
+  old: '            if key not in SCHEMA_KEYWORDS:'
+  new: '            if False:'
+- id: m073
+  description: 'schéma : sous-objets non parcourus'
+  file: llm/guards.py
+  old: '            self.walk(sub, f"{path}/properties/{name}", owner)'
+  new: '            pass'
+- id: m074
+  description: 'schéma : items non parcourus'
+  file: llm/guards.py
+  old: '            self.walk(node["items"], f"{path}/items", owner)'
+  new: '            pass'
+- id: m075
+  description: 'schéma : récursion acceptée'
+  file: llm/guards.py
+  old: '                if ref == "#":'
+  new: '                if False:'
+- id: m076
+  description: 'schéma : cycles $ref acceptés'
+  file: llm/guards.py
+  old: 'if any(cyclic(owner) for owner in list(self.refs)):'
+  new: 'if False:'
+- id: m077
+  description: 'schéma : limite optionnels ignorée'
+  file: llm/guards.py
+  old: 'if w.optional > MAX_OPTIONAL_PARAMS:'
+  new: 'if False:'
+- id: m078
+  description: 'schéma : limite unions ignorée'
+  file: llm/guards.py
+  old: 'if w.unions > MAX_UNION_PARAMS:'
+  new: 'if False:'
+- id: m079
+  description: 'schéma : quantificateur trop grand accepté'
+  file: llm/guards.py
+  old: '> MAX_REGEX_REPEAT:'
+  new: '> 10**9:'
+- id: m080
+  description: 'schéma : minItems libre'
+  file: llm/guards.py
+  old: 'node["minItems"] not in (0, 1)):'
+  new: 'False):'
+- id: m081
+  description: 'schéma : $ref externe accepté'
+  file: llm/guards.py
+  old: 'if not isinstance(ref, str) or not ref.startswith("#"):'
+  new: 'if False:'
+- id: m082
+  description: 'config : outil web hors web_search sans max_uses'
+  file: llm/config.py
+  old: '        web = [t for t in tools if is_web_tool({"name": t})]'
+  new: '        web = [t for t in tools if t == "web_search"]'
+- id: m083
+  description: 'attach : rétention 29 j ignorée'
+  file: journal/release_reservation.py
+  old: 'if lost.age_hours > retention_days * 24:'
+  new: 'if False:'
+- id: m084
+  description: 'config : rétention <= délai d''alerte accepté'
+  file: llm/config.py
+  old: raise ConfigError("batch.results_retention_days doit dépasser batch.stale_after_hours")
+  new: pass
+- id: m085
+  description: stop_reason redevient facultatif (end_turn)
+  file: llm/providers/base.py
+  old: '    stop_reason: str | None
+
+    '
+  new: '    stop_reason: str | None = "end_turn"
+
+    '
+- id: m086
+  description: alerte périmée à 24 h au lieu de 26
+  file: config/agents.yaml
+  old: 'stale_after_hours: 26'
+  new: 'stale_after_hours: 24'
+- id: m087
+  description: 'cumul : filtre purpose (prod/eval) retiré'
+  file: journal/db.py
+  old: 'dry_run = 0 AND purpose = ? '
+  new: 'dry_run = 0 AND ? IS NOT NULL '
+- id: m088
+  description: 'cumul : mois de ts au lieu du mois de facturation'
+  file: journal/db.py
+  old: AND COALESCE(billing_month, substr(ts, 1, 7)) = ?
+  new: AND substr(ts, 1, 7) = ?
+- id: m089
+  description: 'cumul : plus de repli quand billing_month est NULL'
+  file: journal/db.py
+  old: AND COALESCE(billing_month, substr(ts, 1, 7)) = ?
+  new: AND billing_month = ?
+- id: m090
+  description: 'alerte lot périmé : jamais envoyée'
+  file: llm/adapter.py
+  old: "if not db.record_alert_once(rt.conn, f\"batch_stale:{batch_id}\", now):\n            continue"
+  new: "if True:\n            continue"
+- id: m091
+  description: 'alerte lot périmé : lots récents signalés'
+  file: llm/adapter.py
+  old: "if dt.datetime.fromisoformat(r[\"ts\"]) > limit:\n            continue"
+  new: "if False:\n            continue"
