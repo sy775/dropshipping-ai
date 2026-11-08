@@ -136,6 +136,8 @@ Les migrations sont rejouables (table `schema_version`) ; une migration publiée
    `refused` et `LLMRefusedError`, avec alerte Telegram une fois par jour et par agent. Aucune nouvelle tentative
    automatique, le coût réel est toujours journalisé, aucun contenu n'est renvoyé. En lot, chaque élément suit la
    même règle (`content = None`). Le schéma n'est validé que sur une réponse complète.
+   `ProviderResponse.stop_reason` est obligatoire (aucune valeur par défaut) : tout fournisseur, réel ou simulé,
+   le renseigne explicitement.
 
 ## Fournisseur Anthropic (`llm/providers/anthropic.py`)
 - SDK Python officiel ; client créé au premier appel réel, `max_retries=0`, `timeout=timeout_s`. La clé est lue

@@ -18,7 +18,7 @@ WEB_TOOL = {"type": "web_search_20260209", "name": "web_search"}
 
 
 def fixed(usage: Usage, text: str = "ok"):
-    return FakeProvider(responder=lambda req: ProviderResponse(text=text, usage=usage))
+    return FakeProvider(responder=lambda req: ProviderResponse(text=text, usage=usage, stop_reason="end_turn"))
 
 
 # --- critère : coût journalisé = calcul manuel (3 cas de tarifs, dont un en cache) ---

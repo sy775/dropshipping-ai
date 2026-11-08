@@ -24,9 +24,9 @@ class ProviderRequest:
 class ProviderResponse:
     text: str
     usage: Usage
-    # Motif d'arrêt normalisé (vocabulaire Messages API). Les fournisseurs réels le renseignent toujours ;
-    # None est traité comme une réponse incomplète par l'adaptateur.
-    stop_reason: str | None = "end_turn"
+    # Motif d'arrêt normalisé (vocabulaire Messages API). Obligatoire, sans valeur par défaut : chaque
+    # fournisseur (réel ou simulé) le renseigne explicitement. None est traité comme une réponse incomplète.
+    stop_reason: str | None
 
 
 @dataclass(frozen=True)

@@ -125,7 +125,7 @@ def test_batch_sent_on_30th_collected_on_2nd_is_billed_to_send_month(make_runtim
     from llm.providers.base import ProviderResponse
     from llm.providers.fake import FakeProvider
     usage = Usage(tokens_in=2000, tokens_out=1000)
-    rt = make_runtime(provider=FakeProvider(responder=lambda req: ProviderResponse(text="ok", usage=usage)))
+    rt = make_runtime(provider=FakeProvider(responder=lambda req: ProviderResponse(text="ok", usage=usage, stop_reason="end_turn")))
     rt.clock.now = dt.datetime(2026, 11, 30, 22, 0, tzinfo=dt.timezone.utc)
     h = adapter.call("veille", None, [MSG, MSG], runtime=rt)
     assert rows(rt, call_id=h.call_id)[0]["billing_month"] == "2026-11"

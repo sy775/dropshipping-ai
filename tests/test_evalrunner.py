@@ -143,7 +143,7 @@ def test_live_max_cost_stops_the_run(config_dir):
     # Plafond du run à 0,0012 $ : le runner s'arrête avant de le dépasser, sur l'estimation de l'appel suivant.
     fake = FakeProvider(responder=lambda req: ProviderResponse(
         text=json.dumps({"reponse": "ok", "categorie": "autre", "escalade": False}),
-        usage=Usage(tokens_in=300, tokens_out=req.max_tokens)))
+        usage=Usage(tokens_in=300, tokens_out=req.max_tokens), stop_reason="end_turn"))
     rt = _runtime(config_dir, live=True, provider=fake)
     report = run_eval("sav", ["claude-haiku-5-5"], runtime=rt, live=True, max_cost=0.0012)
     s = report["models"]["claude-haiku-5-5"]
@@ -162,12 +162,12 @@ def test_live_eval_cap_stops_the_run(config_dir):
 
 def test_failures_are_classified(config_dir):
     outputs = iter([
-        ProviderResponse(text="pas du json", usage=Usage(tokens_in=1, tokens_out=1)),
+        ProviderResponse(text="pas du json", usage=Usage(tokens_in=1, tokens_out=1), stop_reason="end_turn"),
         ProviderResponse(text="{}", usage=Usage(tokens_in=1, tokens_out=1), stop_reason="max_tokens"),
         ProviderResponse(text="", usage=Usage(tokens_in=1, tokens_out=1), stop_reason="refusal"),
     ] + [ProviderResponse(text=json.dumps({"reponse": "Suivi en cours, livraison 3 à 5 jours. 30 jours",
                                            "categorie": "livraison", "escalade": True}),
-                          usage=Usage(tokens_in=1, tokens_out=1))] * 2)
+                          usage=Usage(tokens_in=1, tokens_out=1), stop_reason="end_turn")] * 2)
     fake = FakeProvider(responder=lambda req: next(outputs))
     report = run_eval("sav", ["claude-haiku-5-5"], runtime=_runtime(config_dir, provider=fake))
     s = report["models"]["claude-haiku-5-5"]
@@ -179,7 +179,8 @@ def test_failures_are_classified(config_dir):
 def test_client_email_never_reaches_journal_or_reports(config_dir, tmp_path):
     echo = FakeProvider(responder=lambda req: ProviderResponse(   # pire cas : le modèle recopie le message
         text=json.dumps({"reponse": json.dumps(req.messages, ensure_ascii=False), "categorie": "autre",
-                         "escalade": False}, ensure_ascii=False), usage=Usage(tokens_in=10, tokens_out=10)))
+                         "escalade": False}, ensure_ascii=False), usage=Usage(tokens_in=10, tokens_out=10),
+        stop_reason="end_turn"))
     rt = _runtime(config_dir, provider=echo)
     report = run_eval("sav", ["claude-haiku-5-5"], runtime=rt)
     sav3 = next(r for r in report["runs"] if r["case_id"] == "sav-003-email-client")

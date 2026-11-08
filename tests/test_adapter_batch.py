@@ -15,7 +15,7 @@ REAL_ITEM_COST = (2000 * 2 + 1000 * 10) / 1e6 * 0.5     # Sonnet, tarif batch
 
 
 def fixed_fake():
-    return FakeProvider(responder=lambda req: ProviderResponse(text='{"ok": true}', usage=USAGE))
+    return FakeProvider(responder=lambda req: ProviderResponse(text='{"ok": true}', usage=USAGE, stop_reason="end_turn"))
 
 
 def spend(rt, purpose="prod"):

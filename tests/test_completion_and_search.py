@@ -27,6 +27,21 @@ def answering(stop_reason, text="réponse", usage=USAGE):
 
 # ---------------------------------------------------------------- motifs d'arrêt (sync)
 
+def test_provider_response_requires_explicit_stop_reason():
+    with pytest.raises(TypeError, match="stop_reason"):
+        ProviderResponse(text="x", usage=USAGE)
+    assert ProviderResponse(text="x", usage=USAGE, stop_reason=None).stop_reason is None
+
+
+def test_fake_and_stub_providers_set_stop_reason_explicitly():
+    from llm.providers.base import ProviderRequest
+    from llm.providers.fake import default_responder
+    from llm.providers.stub_alt import StubAltProvider
+    req = ProviderRequest(model="m", messages=MSG, max_tokens=10, purpose="eval")
+    assert default_responder(req).stop_reason == "end_turn"
+    assert StubAltProvider().complete(req).stop_reason == "end_turn"
+
+
 @pytest.mark.parametrize("stop", ["end_turn", "stop_sequence"])
 def test_success_stop_reasons_return_content(make_runtime, stop):
     rt = make_runtime(provider=answering(stop))
