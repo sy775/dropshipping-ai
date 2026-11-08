@@ -4,14 +4,14 @@ import urllib.parse
 
 from alerts.telegram import MemoryNotifier, TelegramNotifier
 from journal.redact import RedactingFilter, redact
-from tests.fakes import fake_anthropic_key, fake_telegram_token
+from tests.fakes import fake_anthropic_key, fake_bearer, fake_telegram_token
 
 FAKE_ANTHROPIC_KEY = fake_anthropic_key()
 FAKE_TG_TOKEN = fake_telegram_token()
 
 
 def test_redact_keys_and_emails():
-    text = f"key={FAKE_ANTHROPIC_KEY} mail=client.dupont@example.fr tg={FAKE_TG_TOKEN} Bearer abc.def-123"
+    text = f"key={FAKE_ANTHROPIC_KEY} mail=client.dupont@example.fr tg={FAKE_TG_TOKEN} {fake_bearer()}"
     out = redact(text)
     assert FAKE_ANTHROPIC_KEY not in out
     assert "client.dupont@example.fr" not in out

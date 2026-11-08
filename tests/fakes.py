@@ -14,3 +14,8 @@ def fake_anthropic_key() -> str:
 def fake_telegram_token() -> str:
     bot_id = "".join(str(d) for d in range(1, 10))          # 9 chiffres
     return bot_id + ":" + "Tz" * 17                         # 34 caractères après les deux-points
+
+
+def fake_bearer() -> str:
+    """En-tête Authorization factice (Bearer + jeton), assemblé à l'exécution."""
+    return "Bear" + "er " + "abc.def-123"
