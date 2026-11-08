@@ -13,6 +13,16 @@ Durée : environ 15 minutes, dans les premiers jours du mois M+1, pour le mois M
    WHERE status = 'reserved' AND COALESCE(billing_month, substr(ts, 1, 7)) = 'AAAA-MM';
    ```
    Une réservation restante est une estimation, pas un coût réel : la traiter d'abord (collecte, `attach` ou `release`).
+   **Délai de 29 jours pour `attach`.** Anthropic conserve les résultats d'un lot 29 jours après sa création
+   (doc « Batch processing »). Passé ce délai, `attach` ne sert plus à rien : `collect_batch` ne peut plus lire
+   les résultats et le coût réel du lot ne sera jamais journalisé. Donc :
+   - traiter chaque alerte de lot oublié (26 h) dans la semaine, sans attendre le rapprochement mensuel :
+     les lots du début du mois M ont déjà plus de 29 jours au moment du rapprochement de M+1 ;
+   - date limite absolue pour `attach` : date d'envoi (`ts` de la ligne) + 29 jours ;
+   - au-delà, si le lot existe dans la console : **ne pas utiliser `release`**, car le lot a été facturé. La
+     réservation reste comptée au mois M ; c'est une estimation haute, qui ne touche pas les plafonds du mois en
+     cours. Noter dans l'historique le montant de la console et le `call_id` ;
+   - si le lot n'existe pas dans la console, `release` reste la bonne commande, quel que soit l'âge.
 2. Vérifier qu'aucune ligne `pending` ne traîne (elles sont libérées automatiquement après `pending_ttl_minutes`).
 
 ## 2. Montant du journal
@@ -34,6 +44,62 @@ WHERE dry_run = 0 AND provider = 'anthropic'
   AND COALESCE(billing_month, substr(ts, 1, 7)) = 'AAAA-MM'
 GROUP BY jour, model, mode ORDER BY jour;
 ```
+
+## 2 bis. Calibrage de `search_tokens_estimate` (agent veille)
+L'estimation avant appel compte, pour chaque recherche web possible (`web_search_max_uses`, 5 pour veille),
+`search_tokens_estimate` tokens d'entrée (4000 au départ) : ce sont les résultats que le modèle relit. Ce chiffre
+est une hypothèse. Il se calibre chaque mois sur les appels veille réels, en comparant les tokens d'entrée
+estimés aux tokens d'entrée réels.
+
+Valeurs à reporter depuis `config/agents.yaml` : `M` = `web_search_max_uses` de veille (5), `S` =
+`search_tokens_estimate` (4000), `1.20` = 1 + `input_margin`. Les tokens réels d'entrée sont
+`tokens_in + tokens_cache_read + tokens_cache_write`.
+
+```sql
+-- Lots veille du mois : estimation (ligne de réservation, statut released) contre réel (lignes des éléments)
+WITH lots AS (
+  SELECT r.batch_id,
+         r.tokens_in_estimated AS est_in,
+         COUNT(i.call_id) AS elements,
+         SUM(i.tokens_in + i.tokens_cache_read + i.tokens_cache_write) AS reel_in,
+         SUM(i.web_search_requests) AS recherches
+  FROM llm_calls r
+  JOIN llm_calls i ON i.batch_id = r.batch_id AND i.call_id <> r.call_id
+  WHERE r.agent = 'veille' AND r.status = 'released' AND r.dry_run = 0
+    AND COALESCE(r.billing_month, substr(r.ts, 1, 7)) = 'AAAA-MM'
+  GROUP BY r.batch_id
+  HAVING COUNT(i.call_id) = COUNT(i.tokens_in)        -- lots sans élément en échec
+),
+appels AS (
+  SELECT batch_id, est_in, elements, reel_in, recherches FROM lots
+  UNION ALL                                            -- appels veille synchrones, s'il y en a
+  SELECT call_id, tokens_in_estimated, 1,
+         tokens_in + tokens_cache_read + tokens_cache_write, web_search_requests
+  FROM llm_calls
+  WHERE agent = 'veille' AND mode = 'sync' AND status = 'ok' AND dry_run = 0
+    AND COALESCE(billing_month, substr(ts, 1, 7)) = 'AAAA-MM'
+)
+SELECT batch_id, elements, est_in, reel_in, recherches,
+       ROUND(100.0 * (reel_in - est_in) / est_in, 1) AS ecart_pct,
+       -- entrée hors recherches, telle que l'adaptateur l'a estimée (sans marge)
+       ROUND((est_in - elements * 5 * 4000) / 1.20) AS base_est,
+       -- tokens réellement ajoutés par recherche
+       CASE WHEN recherches > 0
+            THEN ROUND((reel_in - (est_in - elements * 5 * 4000) / 1.20) / recherches) END AS tokens_par_recherche
+FROM appels ORDER BY ecart_pct DESC;
+```
+
+Lecture :
+- **`ecart_pct` > 0 sur une ligne** : le réel a dépassé l'estimation, qui doit pourtant être un majorant. La
+  réservation était trop basse et le plafond aurait pu être dépassé. À traiter en priorité : relever `S`
+  sans attendre.
+- **`tokens_par_recherche`** : prendre la médiane du mois, sur au moins 10 lignes avec recherches. Si elle
+  s'écarte de plus de 20 % de `S`, autrement dit si `|médiane − S| / S > 0,20`, remplacer
+  `search_tokens_estimate` par la médiane arrondie au multiple de 500 supérieur. Faire un commit et le noter
+  dans l'historique.
+  - Si l'écart vient d'une baisse, `S` plus élevé n'était que prudent ; l'ajuster libère du plafond.
+  - Si l'écart vient d'une hausse, l'estimation était trop basse : l'ajuster est obligatoire.
+- Moins de 10 lignes avec recherches : ne rien changer, noter « échantillon insuffisant ».
 
 ## 3. Montant de la console
 Console Anthropic, page Usage / Cost (https://platform.claude.com), workspace du projet, mois M en UTC :
@@ -59,6 +125,6 @@ noter le coût total, puis le détail par modèle et la ligne des recherches web
 | Routage `inference_geo` US (x 1,1) : non utilisé par le projet | journal < console | aucun paramètre `inference_geo` dans le code |
 
 ## Historique
-| Mois | Journal ($) | Console ($) | Écart | Cause / action |
-| --- | --- | --- | --- | --- |
-| | | | | |
+| Mois | Journal ($) | Console ($) | Écart | Tokens / recherche (médiane, S) | Cause / action |
+| --- | --- | --- | --- | --- | --- |
+| | | | | | |
