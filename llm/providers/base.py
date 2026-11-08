@@ -17,6 +17,7 @@ class ProviderRequest:
     tools: list[dict[str, Any]] | None = None
     temperature: float | None = None     # None = valeur par défaut du modèle
     effort: str | None = None            # low | medium | high | xhigh | max ; None = défaut du modèle
+    purpose: str = "prod"                # prod | eval : permet à un fournisseur de test de refuser la prod
 
 
 @dataclass(frozen=True)

@@ -252,7 +252,7 @@ def _estimate_input(ctx: _Ctx, messages, schema, cache_prefix, tools) -> tuple[i
 def _request(ctx: _Ctx, messages, schema, cache_prefix, tools) -> ProviderRequest:
     return ProviderRequest(model=ctx.cfg.model, messages=messages, max_tokens=ctx.cfg.max_tokens,
                            system=cache_prefix, schema=schema, tools=tools, temperature=ctx.cfg.temperature,
-                           effort=ctx.cfg.effort)
+                           effort=ctx.cfg.effort, purpose=ctx.purpose)
 
 
 def _parse(text: str, schema: dict | None) -> tuple[Any, str | None]:

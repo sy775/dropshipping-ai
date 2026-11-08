@@ -9,7 +9,9 @@ Chaque appel est journalisé (modèle, tokens, coût). Un plafond de dépense LL
 - Fournisseur implémenté : Anthropic uniquement.
 - Gemini est prévu mais non implémenté. Il ne sera ajouté que pour (a) la génération d'images et de vidéos
   et (b) la recherche web de l'agent Veille, dans une tâche séparée.
-- Aucun autre fournisseur en v0.
+- Aucun autre fournisseur réel en v0. Un fournisseur de test `stub_alt` (modèle `stub-alt`, 0 $, sans réseau)
+  prouve qu'un agent change de fournisseur par `agents.yaml` seul et sert de second modèle à l'évaluation.
+  Il refuse tout appel `purpose="prod"` (`ProviderError` non retryable) ; `ProviderRequest.purpose` le lui transmet.
 
 ## Arborescence attendue
 - `llm/adapter` : une seule fonction d'entrée, utilisée par tous les agents (`call`). Pour les lots,

@@ -20,9 +20,15 @@ def _anthropic(options: dict[str, Any], alert_once: AlertOnce) -> Provider:
     return AnthropicProvider(options, alert_once)
 
 
+def _stub_alt(options: dict[str, Any], alert_once: AlertOnce) -> Provider:
+    from llm.providers.stub_alt import StubAltProvider
+    return StubAltProvider(options, alert_once)
+
+
 _FACTORIES: dict[str, Factory] = {
     "fake": lambda options, alert_once: FakeProvider(),
     "anthropic": _anthropic,
+    "stub_alt": _stub_alt,     # fournisseur de test sans réseau ; refuse purpose=prod
 }
 
 
