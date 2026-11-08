@@ -18,11 +18,17 @@ class Usage:
     tokens_out: int = 0
     cache_read: int = 0
     cache_write: int = 0
+    web_search_requests: int = 0   # recherches web facturées à l'unité (usage.server_tool_use)
 
     @property
     def prompt_tokens(self) -> int:
         """Taille du prompt au sens tarifaire : entrée + lectures + écritures de cache."""
         return self.tokens_in + self.cache_read + self.cache_write
+
+
+def search_cost(price: ModelPrice, searches: int) -> float:
+    """Frais de recherche web : au même tarif en lot qu'en synchrone (pas de remise batch)."""
+    return searches * price.web_search_per_1000 / 1000
 
 
 def compute_cost(price: ModelPrice, usage: Usage, batch: bool = False) -> float:
@@ -31,7 +37,9 @@ def compute_cost(price: ModelPrice, usage: Usage, batch: bool = False) -> float:
             + usage.tokens_out * tier.output
             + usage.cache_write * tier.cache_write
             + usage.cache_read * tier.cache_read) / PER_MILLION
-    return cost * price.batch_multiplier if batch else cost
+    if batch:
+        cost *= price.batch_multiplier
+    return cost + search_cost(price, usage.web_search_requests)
 
 
 # ---------------------------------------------------------------- tarif absent / expiré
@@ -83,10 +91,14 @@ class Estimate:
 
 
 def estimate_cost(price: ModelPrice, raw_input_tokens: int, max_tokens: int, margin: float,
-                  batch: bool = False, cached_prefix_tokens: int = 0) -> Estimate:
+                  batch: bool = False, cached_prefix_tokens: int = 0,
+                  web_searches: int = 0, search_tokens_each: int = 0) -> Estimate:
     """Coût maximal estimé. Le palier se décide sur l'entrée majorée. Le préfixe à mettre en cache
-    est compté au tarif d'écriture en cache (pire cas : le cache est froid)."""
-    input_est = math.ceil(raw_input_tokens * (1 + margin))
+    est compté au tarif d'écriture en cache (pire cas : le cache est froid).
+
+    Recherches web (pire cas : `web_searches` = max_uses de l'agent) : chaque recherche ajoute
+    `search_tokens_each` tokens d'entrée (résultats relus par le modèle) et ses frais à l'unité."""
+    input_est = math.ceil(raw_input_tokens * (1 + margin)) + web_searches * search_tokens_each
     prefix_est = min(math.ceil(cached_prefix_tokens * (1 + margin)), input_est)
     tier = price.tier_for(input_est)
     cost = ((input_est - prefix_est) * tier.input
@@ -94,6 +106,7 @@ def estimate_cost(price: ModelPrice, raw_input_tokens: int, max_tokens: int, mar
             + max_tokens * tier.output) / PER_MILLION
     if batch:
         cost *= price.batch_multiplier
+    cost += search_cost(price, web_searches)
     return Estimate(
         input_tokens=input_est,
         output_tokens=max_tokens,

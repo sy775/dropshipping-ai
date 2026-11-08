@@ -172,7 +172,7 @@ def test_web_tool_refused_for_other_agents(rt):
 
 def test_web_tool_refused_even_if_listed_in_config(config_dir, make_runtime):
     edit_yaml(config_dir / "agents.yaml",
-              lambda d: d["agents"]["sav"].update(allowed_tools=["web_search"]))
+              lambda d: d["agents"]["sav"].update(allowed_tools=["web_search"], web_search_max_uses=1))
     rt = make_runtime()
     with pytest.raises(ToolNotAllowed):
         adapter.call("sav", "shop-a", MSG, tools=[WEB_TOOL], runtime=rt)
@@ -180,7 +180,8 @@ def test_web_tool_refused_even_if_listed_in_config(config_dir, make_runtime):
 
 def test_web_tool_allowed_for_veille(rt):
     adapter.call("veille", None, MSG, tools=[WEB_TOOL], mode="sync", runtime=rt)
-    assert rt.fake.requests[0].tools == [WEB_TOOL]
+    # max_uses est imposé par l'adaptateur depuis agents.yaml (borne du coût de recherche)
+    assert rt.fake.requests[0].tools == [{**WEB_TOOL, "max_uses": 5}]
 
 
 def test_unlisted_tool_refused_for_veille(rt):

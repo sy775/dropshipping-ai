@@ -10,6 +10,13 @@
 currency: USD
 unit: per_million_tokens
 
+# Outils serveur facturés à l'unité, en plus des tokens, par fournisseur.
+# web_search : 10 $ / 1 000 recherches, même tarif en lot (pas de remise batch) ; une recherche en erreur
+# n'est pas facturée. Source : https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+server_tools:
+  anthropic:
+    web_search_per_1000: 10.0
+
 models:
   claude-haiku-5-5:
     provider: anthropic

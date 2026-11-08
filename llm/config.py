@@ -15,6 +15,8 @@ import yaml
 
 KNOWN_AGENTS = ("veille", "sourcing", "boutique", "contenu", "marketing", "sav")
 MODES = ("sync", "batch")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+WEB_SEARCH_TOOL = "web_search"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -38,6 +40,8 @@ class AgentConfig:
     max_tokens: int
     temperature: float | None
     allowed_tools: tuple[str, ...]
+    effort: str | None = None              # None = défaut du modèle (medium sur Haiku 5.5, high sur Sonnet 5.5)
+    web_search_max_uses: int | None = None # obligatoire si web_search est autorisé : borne le coût de recherche
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,7 @@ class Settings:
     max_retries: int
     retry_base_delay_s: float
     pending_ttl_minutes: float = 15.0        # au-delà, une réservation `pending` est abandonnée
+    search_tokens_estimate: int = 4000       # tokens d'entrée estimés par recherche web (résultats relus)
 
     def agent(self, name: str) -> AgentConfig:
         if name not in self.agents:
@@ -111,6 +116,14 @@ def _parse_agent(name: str, raw: dict) -> AgentConfig:
     tools = raw.get("allowed_tools") or []   # absente = aucun outil
     if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
         raise ConfigError(f"{where} : allowed_tools doit être une liste de noms")
+    effort = raw.get("effort")
+    if effort is not None and effort not in EFFORTS:
+        raise ConfigError(f"{where} : effort invalide {effort!r} (attendus : {', '.join(EFFORTS)}, ou null)")
+    max_uses = raw.get("web_search_max_uses")
+    if max_uses is not None and (isinstance(max_uses, bool) or not isinstance(max_uses, int) or max_uses < 1):
+        raise ConfigError(f"{where} : web_search_max_uses doit être un entier >= 1")
+    if WEB_SEARCH_TOOL in tools and max_uses is None:
+        raise ConfigError(f"{where} : web_search autorisé sans web_search_max_uses (coût de recherche non borné)")
     return AgentConfig(
         name=name,
         provider=str(_require(raw, "provider", where)),
@@ -119,6 +132,8 @@ def _parse_agent(name: str, raw: dict) -> AgentConfig:
         max_tokens=max_tokens,
         temperature=temperature,
         allowed_tools=tuple(tools),
+        effort=effort,
+        web_search_max_uses=max_uses,
     )
 
 
@@ -158,6 +173,9 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
     ttl = _positive_number(reservations.get("pending_ttl_minutes", 15), "reservations.pending_ttl_minutes")
     if ttl <= 0:
         raise ConfigError("reservations.pending_ttl_minutes doit être > 0")
+    search_tokens = _require(est, "search_tokens_estimate", "estimation")
+    if isinstance(search_tokens, bool) or not isinstance(search_tokens, int) or search_tokens < 0:
+        raise ConfigError("estimation.search_tokens_estimate : entier >= 0 attendu")
     return Settings(
         agents=agents,
         budgets=budgets,
@@ -167,6 +185,7 @@ def load_settings(config_dir: Path | str | None = None) -> Settings:
         max_retries=max_retries,
         retry_base_delay_s=_positive_number(_require(retry, "base_delay_s", "retry"), "base_delay_s"),
         pending_ttl_minutes=ttl,
+        search_tokens_estimate=search_tokens,
     )
 
 
@@ -189,6 +208,7 @@ class ModelPrice:
     valid_until: dt.date | None
     batch_multiplier: float
     tiers: tuple[PriceTier, ...]
+    web_search_per_1000: float = 0.0     # frais de recherche web du fournisseur (server_tools dans prices.yaml)
 
     def tier_for(self, prompt_tokens: int) -> PriceTier:
         for tier in self.tiers:
@@ -211,7 +231,7 @@ def _as_date(value: Any, where: str) -> dt.date:
         raise ConfigError(f"{where} : date invalide {value!r}") from exc
 
 
-def _parse_model_price(model: str, raw: dict) -> ModelPrice:
+def _parse_model_price(model: str, raw: dict, server_tools: dict) -> ModelPrice:
     where = f"prices.{model}"
     raw_tiers = _require(raw, "tiers", where)
     if not isinstance(raw_tiers, list) or not raw_tiers:
@@ -233,13 +253,17 @@ def _parse_model_price(model: str, raw: dict) -> ModelPrice:
     if None in bounds or bounds != sorted(bounds):
         raise ConfigError(f"{where} : paliers non ordonnés")
     valid_until = raw.get("valid_until")
+    provider = str(_require(raw, "provider", where))
+    tools = server_tools.get(provider) or {}
     return ModelPrice(
         model=model,
-        provider=str(_require(raw, "provider", where)),
+        provider=provider,
         verified_on=_as_date(_require(raw, "verified_on", where), f"{where}.verified_on"),
         valid_until=None if valid_until is None else _as_date(valid_until, f"{where}.valid_until"),
         batch_multiplier=_positive_number(_require(raw, "batch_multiplier", where), f"{where}.batch_multiplier"),
         tiers=tuple(tiers),
+        web_search_per_1000=_positive_number(tools.get("web_search_per_1000", 0),
+                                             f"server_tools.{provider}.web_search_per_1000"),
     )
 
 
@@ -247,4 +271,5 @@ def load_prices(config_dir: Path | str | None = None) -> PriceTable:
     config_dir = Path(config_dir) if config_dir else default_config_dir()
     data = _read_yaml(config_dir / "prices.yaml")
     models = _require(data, "models", "prices.yaml")
-    return PriceTable(models={m: _parse_model_price(m, raw) for m, raw in models.items()})
+    server_tools = data.get("server_tools") or {}
+    return PriceTable(models={m: _parse_model_price(m, raw, server_tools) for m, raw in models.items()})

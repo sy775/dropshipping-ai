@@ -34,9 +34,33 @@ LONG_PROMPT_TOKENS = 100_000      # règle 4
 MAX_ERROR_LEN = 500
 PROVISIONAL_BATCH_PREFIX = "pending-"   # batch_id provisoire tant que l'identifiant fournisseur n'est pas écrit
 
+# Motifs d'arrêt (vocabulaire Messages API). Seuls ceux-ci sont un succès ; refusal est un refus ; tout autre
+# motif (max_tokens, model_context_window_exceeded, pause_turn, tool_use, inconnu ou absent) est une réponse
+# incomplète. Dans tous les cas d'échec, le coût est journalisé et aucun contenu n'est renvoyé.
+SUCCESS_STOPS = frozenset({"end_turn", "stop_sequence"})
+REFUSAL_STOP = "refusal"
+
 
 class LLMCallError(Exception):
     """Échec définitif après les nouvelles tentatives autorisées."""
+
+
+class LLMIncompleteError(Exception):
+    """Réponse tronquée ou interrompue. Coût journalisé, pas de nouvelle tentative automatique
+    (elle coûterait autant), aucun contenu renvoyé."""
+
+    def __init__(self, message: str, call_id: str, stop_reason: str | None):
+        super().__init__(message)
+        self.call_id, self.stop_reason = call_id, stop_reason
+
+
+class LLMRefusedError(Exception):
+    """Le modèle a refusé de répondre (stop_reason = refusal). Coût journalisé, pas de nouvelle tentative,
+    aucun contenu renvoyé, alerte Telegram une fois par jour et par agent."""
+
+    def __init__(self, message: str, call_id: str):
+        super().__init__(message)
+        self.call_id = call_id
 
 
 class LLMFormatError(Exception):
@@ -94,6 +118,7 @@ def call(agent: str, shop_id: str | None, messages: list, schema: dict | None = 
 
     try:
         guards.check_tools(cfg, tools)
+        tools = _prepare_tools(ctx, tools)
     except GuardError as exc:
         ctx.log_refusal(str(exc))
         raise
@@ -168,11 +193,53 @@ class _Ctx:
                    f"(> {self.rt.settings.pending_ttl_minutes:g} min, processus interrompu ?) : "
                    f"{total:.4f} $ libérés. Voir llm_calls status='abandoned'.")
 
+    def alert_refusal(self, call_id: str) -> None:
+        key = f"refusal:{self.cfg.name}:{self.now.date().isoformat()}"
+        if db.record_alert_once(self.rt.conn, key, self.now):
+            notify(self.rt.notifier, f"Refus du modèle ({self.cfg.name}, {self.cfg.model}, call_id {call_id}) : "
+                                     f"stop_reason=refusal. Coût journalisé, aucune nouvelle tentative.")
+
     def check_long_prompt(self, usage: Usage, call_id: str) -> None:
         if usage.prompt_tokens > LONG_PROMPT_TOKENS:
             notify(self.rt.notifier,
                    f"Prompt de {usage.prompt_tokens} tokens (> 100 000) : agent {self.cfg.name}, "
                    f"modèle {self.cfg.model}, call_id {call_id}. Haiku 5.5 facture x5 au-delà.")
+
+
+def _prepare_tools(ctx: _Ctx, tools: list[dict] | None) -> list[dict] | None:
+    """Impose `max_uses` (agents.yaml) à chaque outil web, quelle que soit la valeur demandée : c'est cette
+    borne qui rend le coût de recherche réservable. Refus si l'agent n'en a pas."""
+    if not tools:
+        return tools
+    out = []
+    for tool in tools:
+        if guards.is_web_tool(tool):
+            if ctx.cfg.web_search_max_uses is None:
+                raise guards.ToolNotAllowed(
+                    f"outil web pour {ctx.cfg.name} sans web_search_max_uses dans agents.yaml")
+            tool = {**tool, "max_uses": ctx.cfg.web_search_max_uses}
+        out.append(tool)
+    return out
+
+
+def _max_searches(ctx: _Ctx, tools: list[dict] | None) -> int:
+    if any(guards.is_web_tool(t) for t in tools or []):
+        return ctx.cfg.web_search_max_uses or 0
+    return 0
+
+
+def _estimate(ctx: _Ctx, price: ModelPrice, messages, schema, cache_prefix, tools, batch: bool = False):
+    raw, prefix = _estimate_input(ctx, messages, schema, cache_prefix, tools)
+    return estimate_cost(price, raw, ctx.cfg.max_tokens, ctx.rt.settings.input_margin, batch=batch,
+                         cached_prefix_tokens=prefix, web_searches=_max_searches(ctx, tools),
+                         search_tokens_each=ctx.rt.settings.search_tokens_estimate)
+
+
+def _classify(stop_reason: str | None) -> str:
+    """Statut du journal selon le motif d'arrêt : ok, refused ou incomplete."""
+    if stop_reason in SUCCESS_STOPS:
+        return "ok"
+    return "refused" if stop_reason == REFUSAL_STOP else "incomplete"
 
 
 def _estimate_input(ctx: _Ctx, messages, schema, cache_prefix, tools) -> tuple[int, int]:
@@ -184,7 +251,8 @@ def _estimate_input(ctx: _Ctx, messages, schema, cache_prefix, tools) -> tuple[i
 
 def _request(ctx: _Ctx, messages, schema, cache_prefix, tools) -> ProviderRequest:
     return ProviderRequest(model=ctx.cfg.model, messages=messages, max_tokens=ctx.cfg.max_tokens,
-                           system=cache_prefix, schema=schema, tools=tools, temperature=ctx.cfg.temperature)
+                           system=cache_prefix, schema=schema, tools=tools, temperature=ctx.cfg.temperature,
+                           effort=ctx.cfg.effort)
 
 
 def _parse(text: str, schema: dict | None) -> tuple[Any, str | None]:
@@ -202,6 +270,17 @@ def _parse(text: str, schema: dict | None) -> tuple[Any, str | None]:
     return obj, None
 
 
+def _outcome(resp: ProviderResponse, schema: dict | None) -> tuple[str, Any, str | None]:
+    """(statut, contenu, erreur). Le contenu n'est renvoyé que pour un succès conforme au schéma."""
+    status = _classify(resp.stop_reason)
+    if status != "ok":
+        return status, None, f"{status}: stop_reason={resp.stop_reason}"
+    content, fmt_error = _parse(resp.text, schema)
+    if fmt_error:
+        return "format_error", None, fmt_error
+    return "ok", content, None
+
+
 def _error_text(exc: BaseException) -> str:
     return redact(f"{type(exc).__name__}: {exc}")[:MAX_ERROR_LEN]
 
@@ -213,8 +292,7 @@ def _call_sync(ctx: _Ctx, messages, schema, cache_prefix, tools) -> LLMResult:
         raise ValueError("mode sync : messages doit être une liste non vide de messages")
     rt = ctx.rt
     price = ctx.price()
-    raw, prefix = _estimate_input(ctx, messages, schema, cache_prefix, tools)
-    est = estimate_cost(price, raw, ctx.cfg.max_tokens, rt.settings.input_margin, cached_prefix_tokens=prefix)
+    est = _estimate(ctx, price, messages, schema, cache_prefix, tools)
     request = _request(ctx, messages, schema, cache_prefix, tools)
     provider = rt.provider_for(ctx.cfg.provider)
     estimates = dict(tokens_in_estimated=est.input_tokens, tokens_out_estimated=est.output_tokens,
@@ -254,17 +332,23 @@ def _call_sync(ctx: _Ctx, messages, schema, cache_prefix, tools) -> LLMResult:
         break
 
     latency = int((time.monotonic() - t0) * 1000)
-    cost = compute_cost(price, resp.usage)
-    content, fmt_error = _parse(resp.text, schema)
     u = resp.usage
-    db.update_call(rt.conn, call_id, status="format_error" if fmt_error else "ok", cost_usd=cost,
-                   latency_ms=latency, tokens_in=u.tokens_in, tokens_out=u.tokens_out,
-                   tokens_cache_read=u.cache_read, tokens_cache_write=u.cache_write,
-                   error=redact(fmt_error) if fmt_error else None)
+    cost = compute_cost(price, u)
+    status, content, error = _outcome(resp, schema)
+    db.update_call(rt.conn, call_id, status=status, cost_usd=cost, latency_ms=latency, tokens_in=u.tokens_in,
+                   tokens_out=u.tokens_out, tokens_cache_read=u.cache_read, tokens_cache_write=u.cache_write,
+                   web_search_requests=u.web_search_requests, stop_reason=resp.stop_reason,
+                   error=redact(error) if error else None)
     ctx.after_spend()
     ctx.check_long_prompt(u, call_id)
-    if fmt_error:
-        raise LLMFormatError(fmt_error, call_id)
+    if status == "refused":
+        ctx.alert_refusal(call_id)
+        raise LLMRefusedError(f"refus du modèle pour {ctx.cfg.name} (call_id {call_id})", call_id)
+    if status == "incomplete":
+        raise LLMIncompleteError(f"réponse incomplète pour {ctx.cfg.name} : stop_reason={resp.stop_reason} "
+                                 f"(call_id {call_id})", call_id, resp.stop_reason)
+    if status == "format_error":
+        raise LLMFormatError(error, call_id)
     return LLMResult(content=content, usage=u, cost_usd=cost, call_id=call_id, model=ctx.cfg.model,
                      provider=ctx.cfg.provider, dry_run=ctx.dry_run)
 
@@ -280,9 +364,7 @@ def _submit_batch(ctx: _Ctx, conversations, schema, cache_prefix, tools) -> Batc
     price = ctx.price()
     items, total, tokens_in_est = [], 0.0, 0
     for i, conv in enumerate(conversations):
-        raw, prefix = _estimate_input(ctx, conv, schema, cache_prefix, tools)
-        est = estimate_cost(price, raw, ctx.cfg.max_tokens, rt.settings.input_margin,
-                            batch=True, cached_prefix_tokens=prefix)
+        est = _estimate(ctx, price, conv, schema, cache_prefix, tools, batch=True)
         total += est.cost_usd
         tokens_in_est += est.input_tokens
         items.append((f"item-{i}", _request(ctx, conv, schema, cache_prefix, tools)))
@@ -350,6 +432,7 @@ def collect_batch(batch_id: str, schema: dict | None = None, *,
     lookup = resolve_price(rt.prices, res_row["model"], ctx.now.date())
     billing_month = res_row["billing_month"] or res_row["ts"][:7]
     outcomes: dict[str, BatchItemOutcome] = {}
+    refused_ids: list[str] = []
     with db.transaction(rt.conn):
         for r in results:
             # Lignes réelles imputées au mois d'envoi (celui de la réservation), pas au mois de collecte.
@@ -361,15 +444,20 @@ def collect_batch(batch_id: str, schema: dict | None = None, *,
                 continue
             u = r.response.usage
             cost = compute_cost(lookup.price, u, batch=True)
-            content, fmt_error = _parse(r.response.text, schema)
-            cid = db.insert_call(rt.conn, **common, status="format_error" if fmt_error else "ok", cost_usd=cost,
-                                 tokens_in=u.tokens_in, tokens_out=u.tokens_out, tokens_cache_read=u.cache_read,
-                                 tokens_cache_write=u.cache_write, error=fmt_error)
-            outcomes[r.custom_id] = BatchItemOutcome(r.custom_id, content, u, cost, cid, fmt_error)
+            status, content, error = _outcome(r.response, schema)
+            cid = db.insert_call(rt.conn, **common, status=status, cost_usd=cost, tokens_in=u.tokens_in,
+                                 tokens_out=u.tokens_out, tokens_cache_read=u.cache_read,
+                                 tokens_cache_write=u.cache_write, web_search_requests=u.web_search_requests,
+                                 stop_reason=r.response.stop_reason, error=redact(error) if error else None)
+            if status == "refused":
+                refused_ids.append(cid)
+            outcomes[r.custom_id] = BatchItemOutcome(r.custom_id, content, u, cost, cid, error)
         # La réservation est remplacée par les coûts réels ci-dessus.
         db.update_call(rt.conn, res_row["call_id"], status="released", cost_usd=0)
 
     ctx.after_spend(billing_month)
+    if refused_ids:
+        ctx.alert_refusal(refused_ids[0])
     for o in outcomes.values():
         if o.usage:
             ctx.check_long_prompt(o.usage, o.call_id)

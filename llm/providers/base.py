@@ -16,13 +16,16 @@ class ProviderRequest:
     schema: dict[str, Any] | None = None  # sortie structurée (JSON Schema)
     tools: list[dict[str, Any]] | None = None
     temperature: float | None = None     # None = valeur par défaut du modèle
+    effort: str | None = None            # low | medium | high | xhigh | max ; None = défaut du modèle
 
 
 @dataclass(frozen=True)
 class ProviderResponse:
     text: str
     usage: Usage
-    stop_reason: str | None = None
+    # Motif d'arrêt normalisé (vocabulaire Messages API). Les fournisseurs réels le renseignent toujours ;
+    # None est traité comme une réponse incomplète par l'adaptateur.
+    stop_reason: str | None = "end_turn"
 
 
 @dataclass(frozen=True)

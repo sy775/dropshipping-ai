@@ -18,6 +18,7 @@ CALL_COLUMNS = (
     "tokens_in_estimated", "tokens_out_estimated", "cost_estimated_usd", "cost_usd",
     "latency_ms", "status", "error", "attempt", "batch_id", "dry_run",
     "billing_month",      # migration 003 : mois d'imputation (mois d'envoi pour les lignes d'un lot)
+    "stop_reason", "web_search_requests",   # migration 004
 )
 
 
