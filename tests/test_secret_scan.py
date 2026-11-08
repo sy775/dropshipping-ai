@@ -99,6 +99,7 @@ def test_exceptions_are_explicit_and_limited():
     assert {e.file: e.scopes for e in secret_scan.EXCEPTIONS}["tests/test_alerts.py"] == {"history"}
 
 
+@pytest.mark.skipif(not (REPO_ROOT / ".git").exists(), reason="copie sans .git (contrôle de mutations)")
 def test_repository_is_clean():
     # En CI (clone superficiel), seul l'historique disponible est lu ; le job secret_scan prend tout l'historique.
     assert [str(f) for f in scan(REPO_ROOT)] == []
