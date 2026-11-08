@@ -88,8 +88,32 @@ def _is_main(ref: str) -> bool:
     return ref == "main"
 
 
-def _check_push(args: list[str], cwd: str) -> str | None:
-    """`args` : arguments après `push`."""
+_UNKNOWN = "<indéterminée>"
+_CREATE_OPTIONS = ("-c", "-C", "-b", "-B", "--create", "--orphan", "--" + "force-create")
+
+
+def _switch_target(args: list[str]) -> str | None:
+    """Branche visée par `git switch|checkout <args>` ; None si ce n'est pas un changement de branche."""
+    if "--" in args:
+        return None                                      # checkout -- fichier : restauration de fichiers
+    it = iter(args)
+    for a in it:
+        if a in _CREATE_OPTIONS:
+            return next(it, _UNKNOWN)
+        if a == "-":
+            return _UNKNOWN                              # branche précédente : inconnue ici
+        if not a.startswith("-"):
+            return a
+    return None
+
+
+def _check_push(args: list[str], cwd: str, branch: str | None = None) -> str | None:
+    """`args` : arguments après `push` ; `branch` : branche courante simulée (après un switch dans la commande)."""
+    def current() -> str | None:
+        if branch is None:
+            return _current_branch(cwd)
+        return None if branch == _UNKNOWN else branch
+
     positional = []
     for a in args:
         if a in ("-f", "--mirror", "--all") or (a.startswith("-") and not a.startswith("--") and "f" in a[1:]
@@ -104,18 +128,19 @@ def _check_push(args: list[str], cwd: str) -> str | None:
         src, _, dst = spec.partition(":")
         if _is_main(dst or src):
             return "push vers main interdit : pousser la branche spec/* (la fusion reste humaine)"
-        if not dst and src == "HEAD" and _current_branch(cwd) == "main":
+        if not dst and src == "HEAD" and current() in ("main", None):
             return "push de HEAD depuis main interdit"
     if not refspecs:
-        branch = _current_branch(cwd)
-        if branch is None:
+        now = current()
+        if now is None:
             return "git push sans refspec et branche courante indéterminée : préciser la branche spec/*"
-        if branch == "main":
+        if now == "main":
             return "push vers main interdit (branche courante main) : pousser une branche spec/*"
     return None
 
 
-def _check_git(tokens: list[str], cwd: str) -> str | None:
+def _check_git(tokens: list[str], cwd: str, state: dict) -> str | None:
+    """`state["branch"]` : branche courante simulée, mise à jour par switch/checkout dans la commande."""
     i = 1
     while i < len(tokens) and tokens[i].startswith("-"):
         opt = tokens[i]
@@ -129,8 +154,13 @@ def _check_git(tokens: list[str], cwd: str) -> str | None:
         return None
     if tokens[i] == "filter-repo":
         return "git filter-repo interdit"
+    if tokens[i] in ("switch", "checkout"):
+        target = _switch_target(tokens[i + 1:])
+        if target is not None:
+            state["branch"] = target
+        return None
     if tokens[i] == "push":
-        return _check_push(tokens[i + 1:], cwd)
+        return _check_push(tokens[i + 1:], cwd, state.get("branch"))
     return None
 
 
@@ -138,12 +168,13 @@ def check_command(command: str, cwd: str) -> str | None:
     for pattern, label in FORBIDDEN:
         if pattern.search(command):
             return f"commande interdite : {label}"
+    state: dict = {}
     for segment in _SEGMENTS.split(command):
         tokens = _tokens(segment.strip())
         for j, tok in enumerate(tokens):
             base = tok.replace("\\", "/").rsplit("/", 1)[-1].lower()
             if base in ("git", "git.exe"):
-                reason = _check_git(tokens[j:], cwd)
+                reason = _check_git(tokens[j:], cwd, state)
                 if reason:
                     return reason
                 break
