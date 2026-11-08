@@ -100,6 +100,15 @@ def test_push_without_refspec_from_main_is_blocked(repo, command):
     assert rc == 2 and "main" in err
 
 
+@pytest.mark.parametrize("command", ["git switch main && git push", "git checkout main; git push origin HEAD",
+                                     "git switch -q main && git push -u origin"])
+def test_push_after_switching_to_main_is_blocked(repo, command):
+    # Critic, point bloquant 1 : la branche courante change au sein de la même commande.
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo))
+    assert rc == 2 and "main" in err
+
+
 @pytest.mark.parametrize("command", [
     "git push origin spec/xxx",
     "git push -u origin spec/003-outillage",
