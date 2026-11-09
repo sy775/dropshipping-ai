@@ -12,6 +12,7 @@
       "Edit(tools/secret_scan.py)",
       "Edit(tools/mutation_check.py)",
       "Edit(.claude/settings.local.json)",
+      "Edit(tools/__init__.py)",
       "Edit(.env)",
       "Read(.env*)",
       "Read(**/.env*)",
@@ -24,7 +25,9 @@
       "Bash(git filter-repo *)",
       "Bash(gh repo edit *)",
       "Bash(gh secret *)",
-      "Bash(gh pr merge *)"
+      "Bash(gh pr merge *)",
+      "Bash(gh api *)",
+      "Bash(gh auth token*)"
     ]
   },
   "hooks": {

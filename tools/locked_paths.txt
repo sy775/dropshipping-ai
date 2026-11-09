@@ -9,6 +9,7 @@ tools/hooks/critic_bash.py
 tools/audit.py
 tools/secret_scan.py
 tools/mutation_check.py
+tools/__init__.py
 .claude/settings.json
 .claude/settings.local.json
 .claude/agents/critic.md
