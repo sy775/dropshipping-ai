@@ -1,0 +1,96 @@
+Catalogue de mutations : m104, m105, m108 et m109 visent désormais la liste tools/locked_paths.txt (les tuples
+PROTECTED et GUARDED disparaissent), m106 suit la nouvelle expression du hook ; m110 à m118 couvrent python -I, la
+liste unique, les dossiers, le push et le catalogue en ajout seul. Le catalogue est absent d'origin/main : modifier
+m104-m109 relève encore de la « première introduction ». À appliquer après les patches 01 à 04.
+
+diff --git a/tools/mutations.yaml b/tools/mutations.yaml
+--- a/tools/mutations.yaml
++++ b/tools/mutations.yaml
+@@ -531,19 +531,19 @@
+ # Fichiers verrouillés (hook, réglages, critic, CI, audit) : verrou côté agent et filet de l'audit et de la CI.
+ - id: m104
+   description: 'verrou : hook retiré de la liste des fichiers protégés du hook'
+-  file: tools/hooks/pre_tool_use.py
+-  old: "    \"tools/hooks/pre_tool_use.py\",\n"
++  file: tools/locked_paths.txt
++  old: "tools/hooks/pre_tool_use.py\n"
+   new: ''
+ - id: m105
+   description: 'verrou : réglages Claude Code retirés de la liste du hook'
+-  file: tools/hooks/pre_tool_use.py
+-  old: "    \".claude/settings.json\",\n"
++  file: tools/locked_paths.txt
++  old: ".claude/settings.json\n"
+   new: ''
+ - id: m106
+   description: 'verrou : règle par mention limitée au premier fichier protégé'
+   file: tools/hooks/pre_tool_use.py
+-  old: 'for p in PROTECTED)'
+-  new: 'for p in PROTECTED[:1])'
++  old: 'for p in PROTECTED or ())'
++  new: 'for p in (PROTECTED or ())[:1])'
+ - id: m107
+   description: 'verrou : règle deny Edit du hook retirée'
+   file: .claude/settings.json
+@@ -551,11 +551,57 @@
+   new: ''
+ - id: m108
+   description: 'filet : workflow CI retiré de la liste de l''audit'
+-  file: tools/audit.py
+-  old: "    \".github/workflows/ci.yml\",\n"
++  file: tools/locked_paths.txt
++  old: ".github/workflows/ci.yml\n"
+   new: ''
+ - id: m109
+   description: 'filet : audit retiré de sa propre liste'
+-  file: tools/audit.py
+-  old: "    \"tools/audit.py\",\n"
++  file: tools/locked_paths.txt
++  old: "tools/audit.py\n"
++  new: ''
++# Critic (4 bloquants) et relecture externe : python -I, liste unique, dossiers, push, catalogue en ajout seul.
++- id: m110
++  description: 'verrou : mention des dossiers verrouillés ignorée'
++  file: tools/hooks/pre_tool_use.py
++  old: 'for d in PROTECTED_DIRS or ())'
++  new: 'for d in ())'
++- id: m111
++  description: 'push : toute branche permise (human/*, main)'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if len(positional) != 2 or positional[0] != "origin" or not _SPEC_BRANCH.fullmatch(positional[1]):'
++  new: 'if len(positional) != 2:'
++- id: m112
++  description: 'push : refspec avec deux-points acceptée'
++  file: tools/hooks/pre_tool_use.py
++  old: '_SPEC_BRANCH = re.compile(r"spec/[A-Za-z0-9._-]+")'
++  new: '_SPEC_BRANCH = re.compile(r"spec/\S+")'
++- id: m113
++  description: 'push : options autres que -u acceptées (--delete, --tags)'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if option not in _PUSH_OPTIONS:'
++  new: 'if option == "-f":'
++- id: m114
++  description: 'verrou : liste illisible acceptée (contrôle ouvert)'
++  file: tools/hooks/pre_tool_use.py
++  old: 'PROTECTED = PROTECTED_DIRS = None'
++  new: 'PROTECTED = PROTECTED_DIRS = ()'
++- id: m115
++  description: 'hook lancé sans python -I'
++  file: .claude/settings.json
++  old: '"command": "python -I \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",'
++  new: '"command": "python \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",'
++- id: m116
++  description: 'verrou : réglages locaux retirés de la liste'
++  file: tools/locked_paths.txt
++  old: ".claude/settings.local.json\n"
+   new: ''
++- id: m117
++  description: 'filet : liste de la base ignorée (retrait d''une entrée sur la branche)'
++  file: tools/audit.py
++  old: 'paths |= locked_files(base_list.stdout)'
++  new: 'pass'
++- id: m118
++  description: 'filet : catalogue en ajout seul non contrôlé'
++  file: tools/audit.py
++  old: 'if not catalogue_append_only(repo, base):'
++  new: 'if False:'

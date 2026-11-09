@@ -1,0 +1,49 @@
+Critic, bloquant 1 : hooks lancés par `python -I` (ni le dossier du script ni PYTHONPATH en tête de sys.path :
+un shlex.py déposé dans tools/hooks/ n'est plus importé). Critic, bloquant 2, et relecture externe : règles deny
+Edit pour les fichiers ajoutés à la liste verrouillée. Les hooks n'importent que la bibliothèque standard (test
+existant), -I ne casse donc aucun import local.
+
+diff --git a/.claude/settings.json b/.claude/settings.json
+--- a/.claude/settings.json
++++ b/.claude/settings.json
+@@ -8,6 +8,10 @@
+       "Edit(.claude/agents/critic.md)",
+       "Edit(.github/workflows/ci.yml)",
+       "Edit(tools/audit.py)",
++      "Edit(tools/locked_paths.txt)",
++      "Edit(tools/secret_scan.py)",
++      "Edit(tools/mutation_check.py)",
++      "Edit(.claude/settings.local.json)",
+       "Edit(.env)",
+       "Read(.env*)",
+       "Read(**/.env*)",
+@@ -30,7 +34,7 @@
+         "hooks": [
+           {
+             "type": "command",
+-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",
++            "command": "python -I \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",
+             "timeout": 30,
+             "onFailure": "block"
+           }
+@@ -42,7 +46,7 @@
+         "hooks": [
+           {
+             "type": "command",
+-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/hooks/stop_pytest.py\"",
++            "command": "python -I \"$CLAUDE_PROJECT_DIR/tools/hooks/stop_pytest.py\"",
+             "timeout": 600
+           }
+         ]
+diff --git a/.claude/agents/critic.md b/.claude/agents/critic.md
+--- a/.claude/agents/critic.md
++++ b/.claude/agents/critic.md
+@@ -8,7 +8,7 @@ hooks:
+     - matcher: "Bash|PowerShell"
+       hooks:
+         - type: command
+-          command: python "$CLAUDE_PROJECT_DIR/tools/hooks/critic_bash.py"
++          command: python -I "$CLAUDE_PROJECT_DIR/tools/hooks/critic_bash.py"
+           timeout: 30
+           onFailure: block
+ ---

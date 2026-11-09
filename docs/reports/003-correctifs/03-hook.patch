@@ -1,0 +1,192 @@
+Hook PreToolUse : liste verrouillée lue dans tools/locked_paths.txt (contrôle fermé si illisible), mention d'un
+dossier verrouillé bloquée (critic, bloquant 4), seul `git push [-u] origin spec/<nom>` permis (critic, bloquant 3,
+et relecture externe). Les fonctions devenues inutiles (_current_branch, _is_main) et l'import de subprocess sont
+retirés. Test ajouté : liste illisible = tout est bloqué.
+
+diff --git a/tools/hooks/pre_tool_use.py b/tools/hooks/pre_tool_use.py
+--- a/tools/hooks/pre_tool_use.py
++++ b/tools/hooks/pre_tool_use.py
+@@ -3,12 +3,15 @@
+ Doc : https://code.claude.com/docs/en/hooks (« Exit code 2 » : bloque l'appel, stderr est transmis à Claude).
+
+-- Écriture ou édition de tests/test_audit_guards.py et de tout fichier .env* (sauf .env.example).
+-- Commande Bash ou PowerShell qui mentionne un fichier protégé (relecture externe) : .env* toujours bloqué, même en
+-  lecture ; tests/test_audit_guards.py permis seulement dans `git diff|log|show|status` sans redirection.
++- Écriture ou édition d'un fichier verrouillé (liste unique tools/locked_paths.txt, lue aussi par le filet de
++  tools/audit.py) et de tout fichier .env* (sauf .env.example). Liste illisible : tout est bloqué.
++- Commande Bash ou PowerShell qui mentionne un fichier ou un dossier verrouillé (relecture externe, critic) : permise
++  seulement dans `git diff|log|show|status` sans redirection ; .env* toujours bloqué, même en lecture.
+ - Read, Grep, Glob visant .env* : les règles deny `Read` ne couvrent Grep et Glob qu'en « best-effort »
+   (https://code.claude.com/docs/en/permissions, « What Read and Edit rules cover »).
+-- Commandes (Bash, PowerShell) : push vers main, `--force`, `gh repo edit`, `gh secret`, `git filter-repo`,
+-  `gh pr merge`. Sont aussi traités comme push forcé : `git push -f`, une refspec `+...`, `--mirror`, `--all`.
++- Commandes (Bash, PowerShell) : `--force`, `gh repo edit`, `gh secret`, `git filter-repo`, `gh pr merge`. Seul
++  `git push [-u] origin spec/<nom>` est permis (ni main, ni human/*, ni refspec avec deux-points, ni --delete).
++Lancé par `python -I` (critic, bloquant 1) : ni le dossier du script ni PYTHONPATH en tête de sys.path, donc un
++module déposé à côté du hook n'est pas importé.
+ Ce contrôle par analyse de texte n'est pas une frontière de sécurité absolue : les règles `permissions.deny` de
+ .claude/settings.json en sont la seconde barrière.
+ Bibliothèque standard uniquement.
+@@ -20,7 +23,6 @@ import os
+ import posixpath
+ import re
+ import shlex
+-import subprocess
+ import sys
+
+
+@@ -31,16 +33,21 @@ def _err(text: str) -> None:
+
+
+-# Fichiers verrouillés : même liste que GUARDED de tools/audit.py (filet de l'audit et de la CI). Une modification
+-# voulue se fait par Younes sur une branche human/*.
+-PROTECTED = (
+-    "tests/test_audit_guards.py",
+-    "tools/hooks/pre_tool_use.py",
+-    "tools/hooks/critic_bash.py",
+-    ".claude/settings.json",
+-    ".claude/agents/critic.md",
+-    ".github/workflows/ci.yml",
+-    "tools/audit.py",
+-)
++# Fichiers et dossiers verrouillés : une seule liste, tools/locked_paths.txt (verrouillée elle-même), lue aussi par
++# le filet de tools/audit.py et de la CI. Une modification voulue se fait par Younes (branche human/* après fusion).
++LOCKED_LIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "locked_paths.txt")
++
++
++def load_locked(path: str = LOCKED_LIST) -> tuple[tuple[str, ...], tuple[str, ...]]:
++    """(fichiers, dossiers) de la liste ; un dossier finit par « / », « # » commence un commentaire."""
++    with open(path, encoding="utf-8") as f:
++        entries = [line.strip() for line in f if line.strip() and not line.lstrip().startswith("#")]
++    return tuple(e for e in entries if not e.endswith("/")), tuple(e for e in entries if e.endswith("/"))
++
++
++try:
++    PROTECTED, PROTECTED_DIRS = load_locked()
++except (OSError, UnicodeDecodeError):
++    PROTECTED = PROTECTED_DIRS = None                    # liste illisible : decide() bloque tout
+ WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+ SHELL_TOOLS = {"Bash", "PowerShell"}
+ READ_TOOLS = {"Read", "Grep", "Glob"}
+@@ -94,7 +101,13 @@ def _basename_mention(name: str) -> re.Pattern:
+     return re.compile(_LEFT + re.escape(name) + r"(?![\w])", re.IGNORECASE)
+
+
+-_PROTECTED_MENTIONS = tuple((p, _basename_mention(p.rsplit("/", 1)[-1])) for p in PROTECTED)
++def _dir_mention(path: str) -> re.Pattern:
++    """Dossier nommé seul (`tools/hooks`, `tools/hooks/`, `tools/hooks/.`, `tools/hooks/*`) : critic, bloquant 4."""
++    return re.compile(_LEFT + re.escape(path.rstrip("/")) + r"/?(?:\.|\*)?(?=$|[\s'\"`;|&)])", re.IGNORECASE)
++
++
++_PROTECTED_MENTIONS = tuple((p, _basename_mention(p.rsplit("/", 1)[-1])) for p in PROTECTED or ())
++_PROTECTED_MENTIONS += tuple((d, _dir_mention(d)) for d in PROTECTED_DIRS or ())
+
+
+ def env_mention(text: str) -> str | None:
+@@ -153,22 +166,6 @@ def _tokens(segment: str) -> list[str]:
+         return segment.split()
+
+
+-def _current_branch(cwd: str) -> str | None:
+-    try:
+-        out = subprocess.run(["git", "-C", cwd or ".", "rev-parse", "--abbrev-ref", "HEAD"],
+-                             capture_output=True, text=True, timeout=10)
+-    except (OSError, subprocess.SubprocessError):
+-        return None
+-    return out.stdout.strip() if out.returncode == 0 else None
+-
+-
+-def _is_main(ref: str) -> bool:
+-    ref = ref.lstrip("+")
+-    if ref.startswith("refs/heads/"):
+-        ref = ref[len("refs/heads/"):]
+-    return ref == "main"
+-
+-
+ _UNKNOWN = "<indéterminée>"
+ _CREATE_OPTIONS = ("-c", "-C", "-b", "-B", "--create", "--orphan", "--" + "force-create")
+
+@@ -188,35 +185,25 @@ def _switch_target(args: list[str]) -> str | None:
+     return None
+
+
++_SPEC_BRANCH = re.compile(r"spec/[A-Za-z0-9._-]+")
++_PUSH_OPTIONS = {"-u", "--set-upstream"}
++
++
+ def _check_push(args: list[str], cwd: str, branch: str | None = None) -> str | None:
+-    """`args` : arguments après `push` ; `branch` : branche courante simulée (après un switch dans la commande)."""
+-    def current() -> str | None:
+-        if branch is None:
+-            return _current_branch(cwd)
+-        return None if branch == _UNKNOWN else branch
+-
+-    positional = []
+-    for a in args:
+-        if a in ("-f", "--mirror", "--all") or (a.startswith("-") and not a.startswith("--") and "f" in a[1:]
+-                                               and a not in ("-u",)):
+-            return f"git push {a} : push forcé ou global interdit"
+-        if not a.startswith("-"):
+-            positional.append(a)
+-    refspecs = positional[1:]
+-    for spec in refspecs:
+-        if spec.startswith("+"):
+-            return f"git push {spec} : refspec forcée interdite"
+-        src, _, dst = spec.partition(":")
+-        if _is_main(dst or src):
+-            return "push vers main interdit : pousser la branche spec/* (la fusion reste humaine)"
+-        if not dst and src == "HEAD" and current() in ("main", None):
+-            return "push de HEAD depuis main interdit"
+-    if not refspecs:
+-        now = current()
+-        if now is None:
+-            return "git push sans refspec et branche courante indéterminée : préciser la branche spec/*"
+-        if now == "main":
+-            return "push vers main interdit (branche courante main) : pousser une branche spec/*"
++    """Seule forme permise : `git push [-u] origin spec/<nom>` (critic, bloquant 3, et relecture externe).
++
++    Interdits : main et human/* (branche exemptée du filet CI), refspec avec deux-points (HEAD:x, :x), --delete,
++    -f, --force*, +refspec, --all, --mirror, --tags, push sans branche écrite. `cwd` et `branch` ne servent plus :
++    la branche visée est toujours écrite dans la commande.
++    """
++    options = [a for a in args if a.startswith("-")]
++    positional = [a for a in args if not a.startswith("-")]
++    for option in options:
++        if option not in _PUSH_OPTIONS:
++            return f"git push {option} : option interdite (seul -u est permis)"
++    if len(positional) != 2 or positional[0] != "origin" or not _SPEC_BRANCH.fullmatch(positional[1]):
++        return ("push interdit : seule la forme `git push origin spec/<nom>` est permise "
++                "(ni main, ni human/*, ni refspec avec deux-points)")
+     return None
+
+
+@@ -268,6 +255,8 @@ def decide(data: dict) -> str | None:
+     tool = data.get("tool_name", "")
+     tool_input = data.get("tool_input") or {}
+     project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd", "")
++    if PROTECTED is None:
++        return f"liste des fichiers verrouillés illisible ({LOCKED_LIST}) : action bloquée par prudence"
+     if tool in WRITE_TOOLS:
+         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+         return check_path(path, project_dir)
+diff --git a/tests/test_hooks.py b/tests/test_hooks.py
+--- a/tests/test_hooks.py
++++ b/tests/test_hooks.py
+@@ -364,6 +364,17 @@ def test_hook_ignores_module_planted_next_to_it(tmp_path):
+     assert proc.returncode == 2
+
+
++def test_unreadable_locked_list_blocks_everything(tmp_path):
++    # Contrôle fermé : sans liste des fichiers verrouillés, le hook bloque toute action.
++    hooks = tmp_path / "tools" / "hooks"
++    hooks.mkdir(parents=True)
++    (hooks / "pre_tool_use.py").write_bytes((HOOKS / "pre_tool_use.py").read_bytes())
++    payload = json.dumps(_write("a.py", "Write", str(tmp_path))).encode("utf-8")
++    proc = subprocess.run([sys.executable, "-I", str(hooks / "pre_tool_use.py")], input=payload, capture_output=True,
++                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)}, timeout=60)
++    assert proc.returncode == 2 and "illisible" in proc.stderr.decode("utf-8")
++
++
+ def test_stop_hook_is_not_locked(repo):
+     # La spec 004 doit pouvoir modifier stop_pytest.py : il ne protège rien.
+     _git(repo, "switch", "-q", "-c", "spec/x")
