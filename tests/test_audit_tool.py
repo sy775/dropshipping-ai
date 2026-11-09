@@ -87,6 +87,76 @@ def test_mutation_mode(repo):
     assert "--changed" not in runner.calls[2]
 
 
+# ---------------------------------------------------------------- fichiers protégés (relecture externe)
+
+@pytest.fixture(params=audit.GUARDED)
+def guarded(request, tmp_path):
+    """Dépôt où le fichier protégé existe sur origin/main ; branche spec/004-essai sans modification."""
+    path = tmp_path / request.param
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("contenu protégé\n", encoding="utf-8")
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    _git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(tmp_path, "switch", "-q", "-c", "spec/004-essai")
+    (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "travail de la spec")
+    return tmp_path, path
+
+
+def test_guarded_untouched_passes(guarded):
+    repo, _ = guarded
+    assert audit.main(["--protected-only"], repo=repo) == 0
+    assert audit.guarded_changes(repo, "origin/main") == []
+
+
+@pytest.mark.parametrize("commit", [True, False])
+@pytest.mark.parametrize("action", ["modifier", "supprimer"])
+def test_guarded_change_fails(guarded, commit, action):
+    repo, path = guarded
+    if action == "modifier":
+        path.write_text("affaibli\n", encoding="utf-8")
+    else:
+        path.unlink()
+    if commit:
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "affaiblit le garde-fou")
+    rel = path.relative_to(repo).as_posix()
+    assert audit.guarded_changes(repo, "origin/main") == [rel]
+    assert audit.main(["--protected-only"], repo=repo) == 1
+    if commit:                                                            # audit complet : rien d'autre n'est lancé
+        runner = FakeRunner([0, 0, 0])
+        assert audit.main([], runner=runner, repo=repo) == 1 and runner.calls == []
+        text = (repo / "docs" / "reports" / "004-essai.md").read_text(encoding="utf-8")
+        assert "| fichiers protégés inchangés | échec |" in text and rel in text
+
+
+def test_guarded_change_on_main_after_branching_is_not_blamed(guarded):
+    # origin/main...HEAD : seule la branche compte, pas une modification faite depuis sur main (branche human/*).
+    repo, path = guarded
+    _git(repo, "switch", "-q", "main")
+    path.write_text("modifié par Younes\n", encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "human")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "switch", "-q", "spec/004-essai")
+    assert audit.guarded_changes(repo, "origin/main") == []
+
+
+def test_guarded_first_introduction_is_not_checked(repo):
+    for rel in audit.GUARDED:
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text("nouveau\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "première introduction")
+    assert audit.guarded_changes(repo, "origin/main") == []
+
+
+def test_guarded_missing_base_fails(repo):
+    assert audit.main(["--protected-only", "--base", "origin/absente"], repo=repo) == 1
+
+
 def test_audit_refuses_non_spec_branch(repo):
     _git(repo, "switch", "-q", "main")
     with pytest.raises(SystemExit, match="spec/NNN-titre"):

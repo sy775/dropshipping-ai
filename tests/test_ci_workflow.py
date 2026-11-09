@@ -34,7 +34,7 @@ def test_read_only_permissions_everywhere():
 
 def test_jobs_python_and_cache():
     _, data, _ = _load()
-    assert set(data["jobs"]) == {"pytest", "secret_scan", "mutation_check", "notify"}
+    assert set(data["jobs"]) == {"pytest", "secret_scan", "mutation_check", "protected_files", "notify"}
     for job in data["jobs"].values():
         setup = [s for s in job["steps"] if s.get("uses", "").startswith("actions/setup-python")]
         assert setup and setup[0]["with"] == {"python-version": "3.12", "cache": "pip"}
@@ -60,10 +60,20 @@ def test_mutation_modes():
     assert "--changed" in changed["run"] and "refs/heads/spec/" in changed["if"]
 
 
+def test_protected_files_job_runs_everywhere_but_main_and_human():
+    # Relecture externe de la spec 003 : filet hors agent pour les fichiers protégés.
+    _, data, _ = _load()
+    job = data["jobs"]["protected_files"]
+    assert job["if"] == "github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/human/')"
+    assert _checkout(job)["with"]["fetch-depth"] == 0
+    assert any(s.get("run") == "python -m tools.audit --protected-only --base origin/main" for s in job["steps"])
+
+
 def test_notify_is_skipped_without_secrets_and_never_echoes_them():
     text, data, _ = _load()
     notify = data["jobs"]["notify"]
-    assert notify["if"] == "always()" and set(notify["needs"]) == {"pytest", "secret_scan", "mutation_check"}
+    assert notify["if"] == "always()" and set(notify["needs"]) == {"pytest", "secret_scan", "mutation_check",
+                                                                   "protected_files"}
     step = next(s for s in notify["steps"] if s.get("name") == "Notification Telegram")
     assert "env.TELEGRAM_BOT_TOKEN != ''" in step["if"] and "env.TELEGRAM_CHAT_ID != ''" in step["if"]
     assert step["run"] == "python -m tools.ci_notify"

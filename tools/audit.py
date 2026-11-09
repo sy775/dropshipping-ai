@@ -3,6 +3,10 @@
     python -m tools.audit [--full] [--base origin/main]
 
 - Branche attendue : spec/NNN-titre ; le rapport est docs/reports/NNN-titre.md.
+- Première étape, « fichiers protégés inchangés » : échec si un fichier de GUARDED présent sur la base est modifié
+  ou supprimé sur la branche (commits depuis la base, ou arbre de travail). Un fichier absent de la base (première
+  introduction) n'est pas contrôlé. Une modification voulue se fait par Younes sur une branche human/*.
+  `python -m tools.audit --protected-only` ne lance que ce contrôle (CI, toute branche sauf main et human/*).
 - Chaque étape est bloquante : arrêt à la première en échec (les suivantes sont notées « non lancée »).
 - Mutations : `--changed` par défaut ; toutes si `--full` ou si le catalogue diffère de la base (ou en est absent).
 - Les sections rédigées après coup (Critic, Hypothèses, Écarts avec la documentation officielle) sont conservées
@@ -38,6 +42,10 @@ _À compléter (pages citées)._
 """
 
 
+# Fichiers que l'agent ne modifie jamais (relecture externe de la spec 003).
+GUARDED = ("tests/test_audit_guards.py",)
+
+
 @dataclass
 class Step:
     name: str
@@ -70,6 +78,32 @@ def catalogue_changed(repo: Path, base: str) -> bool:
     if _git(repo, "cat-file", "-e", f"{base}:tools/mutations.yaml").returncode != 0:
         return True
     return _git(repo, "diff", "--quiet", base, "--", "tools/mutations.yaml").returncode != 0
+
+
+def guarded_changes(repo: Path, base: str) -> list[str]:
+    """Fichiers de GUARDED modifiés ou supprimés depuis `base` ; base introuvable = échec (contrôle fermé)."""
+    if _git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        return [f"(base {base} introuvable)"]
+    changed = []
+    for path in GUARDED:
+        if _git(repo, "cat-file", "-e", f"{base}:{path}").returncode != 0:
+            continue                                                       # première introduction
+        committed = _git(repo, "diff", "--quiet", f"{base}...HEAD", "--", path).returncode
+        local = _git(repo, "diff", "--quiet", "HEAD", "--", path).returncode
+        if committed != 0 or local != 0:
+            changed.append(path)
+    return changed
+
+
+def guarded_step(repo: Path, base: str) -> Step:
+    start = time.monotonic()
+    changed = guarded_changes(repo, base)
+    step = Step("fichiers protégés inchangés",
+                [sys.executable, "-m", "tools.audit", "--protected-only", "--base", base])
+    step.status, step.seconds = ("échec" if changed else "ok"), time.monotonic() - start
+    step.output = (f"modifiés depuis {base} (à faire par Younes sur une branche human/*) :\n" + "\n".join(changed)
+                   if changed else "aucun fichier protégé modifié")
+    return step
 
 
 def plan_steps(full: bool, base: str) -> list[Step]:
@@ -113,14 +147,21 @@ def main(argv: list[str] | None = None, runner: Runner = default_runner, repo: P
     parser = argparse.ArgumentParser(prog="python -m tools.audit", description=__doc__.splitlines()[0])
     parser.add_argument("--full", action="store_true", help="toutes les mutations")
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--protected-only", action="store_true", help="seulement le contrôle des fichiers protégés")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.protected_only:
+        step = guarded_step(repo, args.base)
+        print(f"{step.name} : {step.status}\n{step.output}")
+        return 0 if step.status == "ok" else 1
     branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     name = report_name(branch)
     full = args.full or catalogue_changed(repo, args.base)
+    guard = guarded_step(repo, args.base)
     steps = plan_steps(full, args.base)
-    ok = run_steps(steps, repo, runner)
+    ok = guard.status == "ok" and run_steps(steps, repo, runner)
+    steps = [guard, *steps]
 
     path = repo / "docs" / "reports" / f"{name}.md"
     manual = MANUAL_DEFAULT

@@ -59,8 +59,25 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/spec/')
         run: python -m tools.mutation_check --changed --jobs 4
 
+  protected_files:
+    # Filet indépendant du hook de l'agent : fichiers protégés inchangés depuis origin/main. Une modification
+    # voulue se fait par Younes sur une branche human/*, d'où l'exemption (et main, qui est la base).
+    if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/human/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # origin/main nécessaire
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m tools.audit --protected-only --base origin/main
+
   notify:
-    needs: [pytest, secret_scan, mutation_check]
+    needs: [pytest, secret_scan, mutation_check, protected_files]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
