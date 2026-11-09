@@ -21,7 +21,7 @@ diff --git a/tools/hooks/pre_tool_use.py b/tools/hooks/pre_tool_use.py
 +- Dossier .git/ et configuration git (.gitconfig, .config/git/) : jamais écrits, ni par outil ni par le shell.
 +- Alias Win32 d'un chemin (points et espaces finaux, flux `:x` ou `::$DATA`) : ramenés au nom réel avant comparaison.
  Lancé par `python -I` (critic, bloquant 1) : ni le dossier du script ni PYTHONPATH en tête de sys.path, donc un
-   module déposé à côté du hook n'est pas importé.
+ module déposé à côté du hook n'est pas importé.
  Ce contrôle par analyse de texte n'est pas une frontière de sécurité absolue : les règles `permissions.deny` de
 @@ -22,7 +27,8 @@
  import os

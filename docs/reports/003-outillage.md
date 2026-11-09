@@ -337,6 +337,17 @@ Certains cas passent déjà et restent comme non-régression : `{ git push …; 
 
   Les lignes de contexte sont recopiées des fichiers lus. Après application : `python -m tools.audit --full`, puis
   le critic.
+- **Relecture externe de `6293caf`** (patches appliqués dans un clone) :
+  - 06 ne s'appliquait pas : dans le premier hunk, la ligne de contexte « module déposé à côté du hook n'est pas
+    importé. » avait deux espaces de trop. Je l'avais recopiée de mémoire. Elle est corrigée d'après le fichier
+    (`git show HEAD:…`).
+  - Après cela, il restait un échec : `test_code_run_before_the_filet_is_locked` échouait sur toute machine, car
+    `sys.modules` contient `__main__`, et parfois `sitecustomize` ou `_distutils_hack`. Le test est corrigé dans un
+    commit séparé (`109e586`). Il lance maintenant `python -I -S`, et ne compte que les modules chargés par
+    `import tools.audit` : différence entre avant et après l'import. Sans le patch 07, il trouve
+    `['journal', 'journal.redact']`, ce qui est l'échec attendu ; avec le patch, la liste est vide.
+  - Le passage de `git apply --check` est désormais autorisé (il n'écrit rien). Les quatre patches le passent sur
+    la tête de la branche, un par un et enchaînés dans l'ordre 06, 07, 08, 09 : code de sortie 0, aucune sortie.
 - **Choix de correction, à confirmer :**
   - **Bloquant 5.** `journal/redact.py` reste modifiable : c'est du code métier, et le verrouiller interdirait toute
     évolution par une spec. Le filet ne l'importe plus avant le contrôle. Le job CI, qui lance `--protected-only`,
@@ -393,6 +404,15 @@ Contrôles après les tests :
   tenté, car il pousserait vraiment si le hook échouait. Pour l'outil Write et Edit, c'est la règle deny qui répond
   en premier : le hook n'a donc pas été exercé en réel sur ces deux outils.
 
+### Règle de clôture de la spec 003 (décision de Younes)
+
+Elle s'applique une fois les patches 06 à 09 appliqués. Un nouveau contournement du hook par le texte d'une commande
+(échappement, enveloppe, script, nouvelle forme de chemin) va dans les **limites connues**, pas dans les bloquants.
+Reste bloquant seulement un point qui :
+- casse le filet de l'audit ou de la CI ;
+- ou permet d'atteindre main ou les secrets **malgré un ruleset GitHub** sur main : pull request et CI obligatoires,
+  sans contournement.
+
 ### Limites connues (écrites, non traitées)
 
 Ces contrôles réduisent le risque mais ne forment pas une frontière de sécurité.
@@ -446,6 +466,9 @@ Ces contrôles réduisent le risque mais ne forment pas une frontière de sécur
   rouge : elle peut cacher une survivante, comme le critic l'a noté dès la première passe. Cause probable : pytest
   complet passé de 117 s à 245 s, et machine chargée. À vérifier par Younes : relancer ces id seuls avec un délai
   plus long, ou mesurer en CI.
+- **Hypothèse ouverte, à traiter en spec 004 (tests lents).** 43 mutations sur 118 sont tuées par délai, sans
+  qu'un test qui échoue le prouve. Tant que ce n'est pas traité, « 118 / 118 tuées » signifie « 75 prouvées et 43
+  présumées ».
 - **Exceptions du scan de secrets :**
   1. `journal/redact.py`, arbre et historique : le littéral des regex de masquage uniquement.
   2. `tests/test_alerts.py`, historique uniquement : la chaîne exacte du faux en-tête Authorization (le mot `Bearer` suivi de `abc.def-123`), désormais construite à l'exécution dans `tests/fakes.py`.
