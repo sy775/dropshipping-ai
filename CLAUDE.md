@@ -41,9 +41,11 @@ Système d'agents IA qui crée et exploite des boutiques de niche en France (une
 6. Rapport : `docs/reports/NNN-titre.md`, commité avec le code.
 7. Push de la branche `spec/NNN-titre` uniquement.
 - Jamais de commit direct sur main, jamais de push vers main, jamais de fusion : la fusion reste à Younes.
-- Hooks (`.claude/settings.json`, scripts dans `tools/hooks/`) : `tests/test_audit_guards.py` et `.env*` protégés, push vers main et push forcé bloqués, pytest en fin de tour.
-- Fichiers verrouillés (jamais modifiés par Claude, contrôlés par le hook et par la CI) : `tests/test_audit_guards.py`,
-  `tools/hooks/pre_tool_use.py`, `tools/hooks/critic_bash.py`, `.claude/settings.json`, `.claude/agents/critic.md`,
-  `.github/workflows/ci.yml`, `tools/audit.py`. Si une spec doit en modifier un : s'arrêter, écrire le diff exact
-  dans le rapport ; Younes l'applique lui-même sur une branche `human/*`.
-- Catalogue `tools/mutations.yaml` : `old`, `new`, `file` modifiables ; jamais supprimer une entrée ni changer son `id`.
+- Hooks (`.claude/settings.json`, scripts dans `tools/hooks/`, lancés par `python -I`) : fichiers verrouillés et
+  `.env*` protégés (écriture par outil, mention dans une commande shell, lecture de `.env*`), seul
+  `git push [-u] origin spec/<nom>` permis, pytest en fin de tour.
+- Fichiers et dossiers verrouillés : liste unique `tools/locked_paths.txt` (verrouillée elle-même), lue par le hook et
+  par le filet de `tools/audit.py` et de la CI. Jamais modifiés par Claude. Si une spec doit en modifier un :
+  s'arrêter, écrire le diff exact dans le rapport (patch) ; Younes l'applique lui-même sur une branche `human/*`.
+- Catalogue `tools/mutations.yaml` : ajout seul, en fin de fichier. Le filet échoue si une ligne présente sur
+  origin/main est modifiée ou supprimée : modifier une entrée existante (`old`, `new`, `file`) revient à Younes.

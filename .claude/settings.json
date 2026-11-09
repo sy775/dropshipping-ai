@@ -8,6 +8,10 @@
       "Edit(.claude/agents/critic.md)",
       "Edit(.github/workflows/ci.yml)",
       "Edit(tools/audit.py)",
+      "Edit(tools/locked_paths.txt)",
+      "Edit(tools/secret_scan.py)",
+      "Edit(tools/mutation_check.py)",
+      "Edit(.claude/settings.local.json)",
       "Edit(.env)",
       "Read(.env*)",
       "Read(**/.env*)",
@@ -30,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",
+            "command": "python -I \"$CLAUDE_PROJECT_DIR/tools/hooks/pre_tool_use.py\"",
             "timeout": 30,
             "onFailure": "block"
           }
@@ -42,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/hooks/stop_pytest.py\"",
+            "command": "python -I \"$CLAUDE_PROJECT_DIR/tools/hooks/stop_pytest.py\"",
             "timeout": 600
           }
         ]

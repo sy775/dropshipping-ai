@@ -3,9 +3,12 @@
     python -m tools.audit [--full] [--base origin/main]
 
 - Branche attendue : spec/NNN-titre ; le rapport est docs/reports/NNN-titre.md.
-- Première étape, « fichiers protégés inchangés » : échec si un fichier de GUARDED présent sur la base est modifié
-  ou supprimé sur la branche (commits depuis la base, ou arbre de travail). Un fichier absent de la base (première
-  introduction) n'est pas contrôlé. Une modification voulue se fait par Younes sur une branche human/*.
+- Première étape, « fichiers protégés inchangés » : échec si un fichier verrouillé présent sur la base est modifié
+  ou supprimé sur la branche (commits depuis la base, ou arbre de travail). Liste unique tools/locked_paths.txt,
+  partagée avec le hook ; on contrôle l'union de la liste de la branche et de celle de la base. Un fichier absent
+  de la base (première introduction) n'est pas contrôlé ; base ou liste introuvable = échec. tools/mutations.yaml
+  est en ajout seul : échec si une ligne présente à la base de la branche est modifiée ou supprimée.
+  Une modification voulue se fait par Younes sur une branche human/*.
   `python -m tools.audit --protected-only` ne lance que ce contrôle (CI, toute branche sauf main et human/*).
 - Chaque étape est bloquante : arrêt à la première en échec (les suivantes sont notées « non lancée »).
 - Mutations : `--changed` par défaut ; toutes si `--full` ou si le catalogue diffère de la base (ou en est absent).
@@ -42,16 +45,18 @@ _À compléter (pages citées)._
 """
 
 
-# Fichiers que l'agent ne modifie jamais (relecture externe de la spec 003) ; même liste que PROTECTED du hook.
-GUARDED = (
-    "tests/test_audit_guards.py",
-    "tools/hooks/pre_tool_use.py",
-    "tools/hooks/critic_bash.py",
-    ".claude/settings.json",
-    ".claude/agents/critic.md",
-    ".github/workflows/ci.yml",
-    "tools/audit.py",
-)
+# Fichiers et dossiers verrouillés : liste unique partagée avec PROTECTED du hook, verrouillée elle-même.
+LOCKED_LIST = "tools/locked_paths.txt"
+CATALOGUE = "tools/mutations.yaml"                    # ajout seul (relecture externe)
+
+
+def locked_files(text: str) -> set[str]:
+    """Fichiers de la liste (les dossiers, finissant par « / », ne servent qu'à la règle par mention du hook)."""
+    entries = (line.strip() for line in text.splitlines())
+    return {e for e in entries if e and not e.startswith("#") and not e.endswith("/")}
+
+
+GUARDED = tuple(sorted(locked_files((REPO_ROOT / LOCKED_LIST).read_text(encoding="utf-8"))))
 
 
 @dataclass
@@ -89,18 +94,43 @@ def catalogue_changed(repo: Path, base: str) -> bool:
 
 
 def guarded_changes(repo: Path, base: str) -> list[str]:
-    """Fichiers de GUARDED modifiés ou supprimés depuis `base` ; base introuvable = échec (contrôle fermé)."""
+    """Fichiers verrouillés modifiés ou supprimés depuis `base`, et catalogue réécrit ; base ou liste introuvable =
+    échec (contrôle fermé). La liste de la base compte aussi : retirer une entrée sur la branche ne la soustrait pas."""
     if _git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
         return [f"(base {base} introuvable)"]
+    local_list = repo / LOCKED_LIST
+    base_list = _git(repo, "show", f"{base}:{LOCKED_LIST}")
+    if not local_list.is_file() and base_list.returncode != 0:
+        return [f"({LOCKED_LIST} introuvable)"]
+    paths = locked_files(local_list.read_text(encoding="utf-8")) if local_list.is_file() else set()
+    if base_list.returncode == 0:
+        paths |= locked_files(base_list.stdout)
     changed = []
-    for path in GUARDED:
+    for path in sorted(paths):
         if _git(repo, "cat-file", "-e", f"{base}:{path}").returncode != 0:
             continue                                                       # première introduction
         committed = _git(repo, "diff", "--quiet", f"{base}...HEAD", "--", path).returncode
         local = _git(repo, "diff", "--quiet", "HEAD", "--", path).returncode
         if committed != 0 or local != 0:
             changed.append(path)
+    if not catalogue_append_only(repo, base):
+        changed.append(f"{CATALOGUE} (ajout seul : une ligne de {base} a été modifiée ou supprimée)")
     return changed
+
+
+def catalogue_append_only(repo: Path, base: str) -> bool:
+    """Le catalogue de la merge-base est un préfixe du catalogue commité et de celui de l'arbre de travail."""
+    merge_base = _git(repo, "merge-base", base, "HEAD").stdout.strip()
+    if not merge_base:
+        return False                                                       # contrôle fermé
+    old = _git(repo, "show", f"{merge_base}:{CATALOGUE}")
+    if old.returncode != 0:
+        return True                                                        # première introduction
+    head = _git(repo, "show", f"HEAD:{CATALOGUE}")
+    work = repo / CATALOGUE
+    texts = [head.stdout if head.returncode == 0 else "",
+             work.read_bytes().decode("utf-8").replace("\r\n", "\n") if work.is_file() else ""]
+    return all(text.startswith(old.stdout) for text in texts)
 
 
 def guarded_step(repo: Path, base: str) -> Step:

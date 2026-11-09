@@ -8,7 +8,7 @@ hooks:
     - matcher: "Bash|PowerShell"
       hooks:
         - type: command
-          command: python "$CLAUDE_PROJECT_DIR/tools/hooks/critic_bash.py"
+          command: python -I "$CLAUDE_PROJECT_DIR/tools/hooks/critic_bash.py"
           timeout: 30
           onFailure: block
 ---

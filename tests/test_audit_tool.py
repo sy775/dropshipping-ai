@@ -17,10 +17,19 @@ def _git(repo: Path, *args: str) -> None:
                     "-c", "commit.gpgsign=false", *args], check=True, capture_output=True)
 
 
+def _seed_locked_list(repo: Path) -> Path:
+    """Copie la liste verrouillée du dépôt : sans elle, le filet échoue (contrôle fermé)."""
+    target = repo / audit.LOCKED_LIST
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes((REPO / audit.LOCKED_LIST).read_bytes())
+    return target
+
+
 @pytest.fixture
 def repo(tmp_path):
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
+    _seed_locked_list(tmp_path)
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     _git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
@@ -74,7 +83,7 @@ def test_mutation_mode(repo):
     runner = FakeRunner([0, 0, 0])
     audit.main([], runner=runner, repo=repo)                              # catalogue absent de la base : complet
     assert "--changed" not in runner.calls[2]
-    (repo / "tools").mkdir()
+    (repo / "tools").mkdir(exist_ok=True)
     (repo / "tools" / "mutations.yaml").write_text("[]\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "catalogue")
@@ -92,9 +101,11 @@ def test_mutation_mode(repo):
 @pytest.fixture(params=audit.GUARDED)
 def guarded(request, tmp_path):
     """Dépôt où le fichier protégé existe sur origin/main ; branche spec/004-essai sans modification."""
+    _seed_locked_list(tmp_path)
     path = tmp_path / request.param
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("contenu protégé\n", encoding="utf-8")
+    if request.param != audit.LOCKED_LIST:
+        path.write_text("contenu protégé\n", encoding="utf-8")
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
@@ -145,12 +156,76 @@ def test_guarded_change_on_main_after_branching_is_not_blamed(guarded):
 
 
 def test_guarded_first_introduction_is_not_checked(repo):
-    for rel in audit.GUARDED:
+    for rel in set(audit.GUARDED) - {audit.LOCKED_LIST}:
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         (repo / rel).write_text("nouveau\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "première introduction")
     assert audit.guarded_changes(repo, "origin/main") == []
+
+
+def test_guarded_list_is_shared_with_the_hook():
+    # Relecture externe : une seule liste, lue par le hook et par le filet.
+    from tools.hooks import pre_tool_use
+    assert set(audit.GUARDED) == set(pre_tool_use.PROTECTED)
+    assert audit.LOCKED_LIST in audit.GUARDED                            # la liste est verrouillée elle-même
+
+
+def test_removing_an_entry_from_the_list_does_not_unlock_it(repo):
+    # Le filet lit aussi la liste de la base : retirer une ligne sur la branche ne soustrait pas le fichier.
+    target = "tools/secret_scan.py"
+    (repo / target).write_text("scan\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "scan")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    listed = repo / audit.LOCKED_LIST
+    listed.write_text(listed.read_text(encoding="utf-8").replace(target + "\n", ""), encoding="utf-8")
+    (repo / target).write_text("affaibli\n", encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "retire le scan de la liste puis le modifie")
+    assert audit.guarded_changes(repo, "origin/main") == [audit.LOCKED_LIST, target]
+
+
+def test_missing_locked_list_fails(tmp_path):
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    _git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
+    assert audit.main(["--protected-only"], repo=tmp_path) == 1
+
+
+@pytest.fixture
+def catalogue(repo):
+    """Catalogue présent sur origin/main (deux entrées) ; branche spec/004-essai."""
+    path = repo / audit.CATALOGUE
+    path.write_text("- id: m001\n  old: a\n- id: m002\n  old: b\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "catalogue")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return repo, path
+
+
+def test_catalogue_append_at_end_passes(catalogue):
+    repo, path = catalogue
+    path.write_text(path.read_text(encoding="utf-8") + "- id: m003\n  old: c\n", encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "ajout")
+    assert audit.guarded_changes(repo, "origin/main") == []
+
+
+@pytest.mark.parametrize("commit", [True, False])
+@pytest.mark.parametrize("new_text", [
+    "- id: m001\n  old: a\n- id: m002\n  old: B\n",                            # ligne modifiée
+    "- id: m001\n  old: a\n",                                                  # entrée supprimée
+    "- id: m001\n  old: a\n- id: m009\n  old: z\n- id: m002\n  old: b\n",         # insertion au milieu
+])
+def test_catalogue_line_of_base_changed_fails(catalogue, commit, new_text):
+    repo, path = catalogue
+    path.write_text(new_text, encoding="utf-8")
+    if commit:
+        _git(repo, "commit", "-q", "-am", "modifie le catalogue")
+    changed = audit.guarded_changes(repo, "origin/main")
+    assert len(changed) == 1 and changed[0].startswith(audit.CATALOGUE)
+    assert audit.main(["--protected-only"], repo=repo) == 1
 
 
 def test_guarded_missing_base_fails(repo):

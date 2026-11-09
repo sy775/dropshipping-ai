@@ -364,6 +364,17 @@ def test_hook_ignores_module_planted_next_to_it(tmp_path):
     assert proc.returncode == 2
 
 
+def test_unreadable_locked_list_blocks_everything(tmp_path):
+    # Contrôle fermé : sans liste des fichiers verrouillés, le hook bloque toute action.
+    hooks = tmp_path / "tools" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "pre_tool_use.py").write_bytes((HOOKS / "pre_tool_use.py").read_bytes())
+    payload = json.dumps(_write("a.py", "Write", str(tmp_path))).encode("utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(hooks / "pre_tool_use.py")], input=payload, capture_output=True,
+                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)}, timeout=60)
+    assert proc.returncode == 2 and "illisible" in proc.stderr.decode("utf-8")
+
+
 def test_stop_hook_is_not_locked(repo):
     # La spec 004 doit pouvoir modifier stop_pytest.py : il ne protège rien.
     _git(repo, "switch", "-q", "-c", "spec/x")

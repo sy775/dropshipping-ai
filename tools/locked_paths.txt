@@ -1,0 +1,22 @@
+# Fichiers et dossiers verrouillés : jamais modifiés par Claude (hook tools/hooks/pre_tool_use.py), contrôlés par le
+# filet de tools/audit.py et de la CI. Liste unique, verrouillée elle-même. Un dossier finit par « / » : sa mention
+# seule dans une commande shell est bloquée (restauration ou copie du dossier entier), pas les fichiers qu'il
+# contient. Une modification voulue se fait par Younes (branche human/* après fusion).
+tests/test_audit_guards.py
+tools/locked_paths.txt
+tools/hooks/pre_tool_use.py
+tools/hooks/critic_bash.py
+tools/audit.py
+tools/secret_scan.py
+tools/mutation_check.py
+.claude/settings.json
+.claude/settings.local.json
+.claude/agents/critic.md
+.github/workflows/ci.yml
+tools/
+tools/hooks/
+tests/
+.claude/
+.claude/agents/
+.github/
+.github/workflows/
