@@ -129,8 +129,114 @@ def test_unreadable_input_is_blocked():
 
 
 def test_other_tools_are_ignored():
-    rc, _ = _hook("pre_tool_use.py", {"tool_name": "Read", "tool_input": {"file_path": ".env"}, "cwd": str(REPO)})
+    rc, _ = _hook("pre_tool_use.py", {"tool_name": "WebFetch", "tool_input": {"url": "https://example.org/.env"},
+                                      "cwd": str(REPO)})
     assert rc == 0
+
+
+# ---------------------------------------------------------------- pre_tool_use : mention d'un fichier protégé
+# Relecture externe de la spec 003 : ces commandes passaient (le hook ne protégeait les fichiers que pour Edit/Write).
+
+GUARDS_ABS = str(REPO / "tests" / "test_audit_guards.py")
+
+
+@pytest.mark.parametrize("tool,command", [
+    # Les cinq commandes de la relecture externe.
+    ("Bash", "printf '\\n' >> tests/test_audit_guards.py"),
+    ("Bash", "echo KEY=x > .env"),
+    ("Bash", "cp /tmp/x tests/test_audit_guards.py"),
+    ("Bash", "sed -i 's/a/b/' tests/test_audit_guards.py"),
+    ("Bash", "python -c \"open('.env','w').write('x')\""),
+    ("PowerShell", "Add-Content tests/test_audit_guards.py x"),
+    ("PowerShell", "Set-Content .env x"),
+    # Formes de chemin.
+    ("Bash", f"cp x '{GUARDS_ABS}'"),
+    ("PowerShell", f"Copy-Item x \"{GUARDS_ABS.replace('/', chr(92))}\""),
+    ("PowerShell", "Remove-Item .\\tests\\test_audit_guards.py"),
+    ("Bash", "cd tests && rm TEST_AUDIT_GUARDS.PY"),
+    ("Bash", "rm ./tests/../tests/test_audit_guards.py"),
+    ("Bash", "python -c \"p = 'tests/' + 'test_audit_guards.py'\""),
+    ("Bash", "git checkout -- tests/test_audit_guards.py"),
+    ("Bash", "git add tests/test_audit_guards.py"),
+    # Lecture git détournée en écriture.
+    ("Bash", "git diff -- tests/test_audit_guards.py > tests/test_audit_guards.py"),
+    ("Bash", "git diff --output=x -- tests/test_audit_guards.py"),
+    ("Bash", "git -c diff.external=x diff -- tests/test_audit_guards.py"),
+    ("Bash", "git log $(rm tests/test_audit_guards.py)"),
+    ("PowerShell", "git show HEAD:tests/test_audit_guards.py | Out-File tests/test_audit_guards.py"),
+    # .env* : bloqué même en lecture, y compris par git.
+    ("Bash", "cat .env"),
+    ("Bash", "cat ./.env"),
+    ("Bash", "type .ENV.local"),
+    ("Bash", "cat config/.env.prod"),
+    ("Bash", "cat .envrc"),
+    ("Bash", "git show HEAD:.env"),
+    ("Bash", "git diff -- .env"),
+    ("PowerShell", "Get-Content .env"),
+    ("PowerShell", "Get-Content \"config\\.env.local\""),
+])
+def test_shell_mention_of_protected_file_is_blocked(repo, tool, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo, tool))
+    assert rc == 2 and "Bloqué" in err, command
+
+
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
+@pytest.mark.parametrize("command", [
+    "git diff origin/main...HEAD -- tests/test_audit_guards.py",
+    "git diff --quiet origin/main...HEAD -- tests/test_audit_guards.py",
+    "git log --oneline -- tests/test_audit_guards.py",
+    "git show HEAD:tests/test_audit_guards.py",
+    "git status tests/test_audit_guards.py",
+    "git --no-pager diff -- tests/test_audit_guards.py",
+    "cat .env.example",
+    "python -c \"import os; print(os.environ)\"",
+    "node -e \"console.log(process.env.HOME)\"",
+    "echo $env:PATH",
+    "python -m pytest -q",
+])
+def test_shell_allowed_mentions_pass(repo, tool, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo, tool))
+    assert (rc, err) == (0, ""), command
+
+
+# ---------------------------------------------------------------- pre_tool_use : lecture de .env* (Read, Grep, Glob)
+# Doc : https://code.claude.com/docs/en/permissions, « What Read and Edit rules cover » : les règles deny Read ne
+# s'appliquent à Grep et Glob qu'en « best-effort » ; le hook bloque donc aussi ces outils.
+
+def _tool(tool, **tool_input):
+    return {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input, "cwd": str(REPO)}
+
+
+@pytest.mark.parametrize("payload", [
+    _tool("Read", file_path=".env"),
+    _tool("Read", file_path=str(REPO / ".env.local")),
+    _tool("Read", file_path="config\\.env.prod"),
+    _tool("Grep", pattern="KEY", path=".env"),
+    _tool("Grep", pattern="KEY", path="config/.env.local"),
+    _tool("Grep", pattern="KEY", glob=".env*"),
+    _tool("Grep", pattern="KEY", path=".", glob="**/.env*"),
+    _tool("Glob", pattern="**/.env*"),
+    _tool("Glob", pattern=".env"),
+    _tool("Glob", pattern="*", path="config/.env.d"),
+])
+def test_reading_env_files_is_blocked(payload):
+    rc, err = _hook("pre_tool_use.py", payload, {"CLAUDE_PROJECT_DIR": str(REPO)})
+    assert rc == 2 and "Bloqué" in err, payload
+
+
+@pytest.mark.parametrize("payload", [
+    _tool("Read", file_path=".env.example"),
+    _tool("Read", file_path="tests/test_audit_guards.py"),
+    _tool("Grep", pattern=".env", path="tools"),                          # motif de contenu, pas un chemin
+    _tool("Grep", pattern="environ", glob="*.py"),
+    _tool("Glob", pattern="**/*.py"),
+    _tool("Glob", pattern=".env.example"),
+])
+def test_other_reads_pass(payload):
+    rc, err = _hook("pre_tool_use.py", payload, {"CLAUDE_PROJECT_DIR": str(REPO)})
+    assert (rc, err) == (0, ""), payload
 
 
 # ---------------------------------------------------------------- critic_bash
