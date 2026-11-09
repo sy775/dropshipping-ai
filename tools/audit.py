@@ -42,8 +42,16 @@ _À compléter (pages citées)._
 """
 
 
-# Fichiers que l'agent ne modifie jamais (relecture externe de la spec 003).
-GUARDED = ("tests/test_audit_guards.py",)
+# Fichiers que l'agent ne modifie jamais (relecture externe de la spec 003) ; même liste que PROTECTED du hook.
+GUARDED = (
+    "tests/test_audit_guards.py",
+    "tools/hooks/pre_tool_use.py",
+    "tools/hooks/critic_bash.py",
+    ".claude/settings.json",
+    ".claude/agents/critic.md",
+    ".github/workflows/ci.yml",
+    "tools/audit.py",
+)
 
 
 @dataclass

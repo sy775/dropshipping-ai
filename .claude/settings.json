@@ -2,6 +2,12 @@
   "permissions": {
     "deny": [
       "Edit(tests/test_audit_guards.py)",
+      "Edit(tools/hooks/pre_tool_use.py)",
+      "Edit(tools/hooks/critic_bash.py)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/agents/critic.md)",
+      "Edit(.github/workflows/ci.yml)",
+      "Edit(tools/audit.py)",
       "Edit(.env)",
       "Read(.env*)",
       "Read(**/.env*)",

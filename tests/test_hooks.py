@@ -201,6 +201,61 @@ def test_shell_allowed_mentions_pass(repo, tool, command):
     assert (rc, err) == (0, ""), command
 
 
+# ---------------------------------------------------------------- pre_tool_use : fichiers verrouillés
+# Faille trouvée pendant la correction : l'agent pouvait désactiver ses propres garde-fous en modifiant le hook, les
+# réglages, le critic, la CI ou l'audit. Une modification voulue se fait par Younes sur une branche human/*.
+
+LOCKED = ("tools/hooks/pre_tool_use.py", "tools/hooks/critic_bash.py", ".claude/settings.json",
+          ".claude/agents/critic.md", ".github/workflows/ci.yml", "tools/audit.py")
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit"])
+@pytest.mark.parametrize("path", LOCKED)
+def test_locked_files_are_blocked_for_write_tools(tool, path):
+    for form in (path, str(REPO / path), str(REPO / path).replace("/", "\\"), "./" + path.upper()):
+        rc, err = _hook("pre_tool_use.py", _write(form, tool), {"CLAUDE_PROJECT_DIR": str(REPO)})
+        assert rc == 2 and "Bloqué" in err, form
+
+
+@pytest.mark.parametrize("path", LOCKED)
+@pytest.mark.parametrize("tool,template", [
+    ("Bash", "echo x >> {}"),
+    ("Bash", "sed -i 's/a/b/' '{}'"),
+    ("Bash", "git checkout origin/main -- {}"),
+    ("Bash", "cat {}"),
+    ("PowerShell", "Set-Content {} x"),
+    ("PowerShell", "Remove-Item \"{}\""),
+])
+def test_locked_files_are_blocked_for_shell(repo, path, tool, template):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    for form in (path, str(REPO / path).replace("/", "\\")):
+        rc, err = _hook("pre_tool_use.py", _cmd(template.format(form), repo, tool))
+        assert rc == 2 and "Bloqué" in err, template.format(form)
+
+
+@pytest.mark.parametrize("path", LOCKED)
+@pytest.mark.parametrize("template", ["git diff origin/main...HEAD -- {}", "git log --oneline -- {}",
+                                      "git show HEAD:{}", "git status {}"])
+def test_locked_files_git_read_passes(repo, path, template):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(template.format(path), repo))
+    assert (rc, err) == (0, "")
+
+
+def test_locked_list_matches_hook_and_audit():
+    from tools import audit
+    from tools.hooks import pre_tool_use
+    assert set(pre_tool_use.PROTECTED) == set(audit.GUARDED) == set(LOCKED) | {"tests/test_audit_guards.py"}
+
+
+def test_stop_hook_is_not_locked(repo):
+    # La spec 004 doit pouvoir modifier stop_pytest.py : il ne protège rien.
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    assert _hook("pre_tool_use.py", _write("tools/hooks/stop_pytest.py", "Edit"),
+                 {"CLAUDE_PROJECT_DIR": str(REPO)}) == (0, "")
+    assert _hook("pre_tool_use.py", _cmd("cat tools/hooks/stop_pytest.py", repo)) == (0, "")
+
+
 # ---------------------------------------------------------------- pre_tool_use : lecture de .env* (Read, Grep, Glob)
 # Doc : https://code.claude.com/docs/en/permissions, « What Read and Edit rules cover » : les règles deny Read ne
 # s'appliquent à Grep et Glob qu'en « best-effort » ; le hook bloque donc aussi ces outils.

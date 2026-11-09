@@ -186,6 +186,7 @@ def test_project_settings_wire_hooks_and_deny_rules():
     deny = settings["permissions"]["deny"]
     assert "Edit(tests/test_audit_guards.py)" in deny and "Bash(gh pr merge *)" in deny
     assert {"Read(.env*)", "Read(**/.env*)"} <= set(deny)
+    assert {f"Edit({path})" for path in audit.GUARDED} <= set(deny)              # fichiers verrouillés
 
 
 def test_critic_is_read_only():

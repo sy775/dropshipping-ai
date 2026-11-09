@@ -528,3 +528,34 @@
   file: .github/workflows/ci.yml
   old: '- run: python -m tools.audit --protected-only --base origin/main'
   new: '- run: "true"'
+# Fichiers verrouillés (hook, réglages, critic, CI, audit) : verrou côté agent et filet de l'audit et de la CI.
+- id: m104
+  description: 'verrou : hook retiré de la liste des fichiers protégés du hook'
+  file: tools/hooks/pre_tool_use.py
+  old: "    \"tools/hooks/pre_tool_use.py\",\n"
+  new: ''
+- id: m105
+  description: 'verrou : réglages Claude Code retirés de la liste du hook'
+  file: tools/hooks/pre_tool_use.py
+  old: "    \".claude/settings.json\",\n"
+  new: ''
+- id: m106
+  description: 'verrou : règle par mention limitée au premier fichier protégé'
+  file: tools/hooks/pre_tool_use.py
+  old: 'for p in PROTECTED)'
+  new: 'for p in PROTECTED[:1])'
+- id: m107
+  description: 'verrou : règle deny Edit du hook retirée'
+  file: .claude/settings.json
+  old: "      \"Edit(tools/hooks/pre_tool_use.py)\",\n"
+  new: ''
+- id: m108
+  description: 'filet : workflow CI retiré de la liste de l''audit'
+  file: tools/audit.py
+  old: "    \".github/workflows/ci.yml\",\n"
+  new: ''
+- id: m109
+  description: 'filet : audit retiré de sa propre liste'
+  file: tools/audit.py
+  old: "    \"tools/audit.py\",\n"
+  new: ''

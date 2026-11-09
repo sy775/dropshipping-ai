@@ -30,7 +30,17 @@ def _err(text: str) -> None:
     sys.stderr.flush()
 
 
-PROTECTED = ("tests/test_audit_guards.py",)
+# Fichiers verrouillés : même liste que GUARDED de tools/audit.py (filet de l'audit et de la CI). Une modification
+# voulue se fait par Younes sur une branche human/*.
+PROTECTED = (
+    "tests/test_audit_guards.py",
+    "tools/hooks/pre_tool_use.py",
+    "tools/hooks/critic_bash.py",
+    ".claude/settings.json",
+    ".claude/agents/critic.md",
+    ".github/workflows/ci.yml",
+    "tools/audit.py",
+)
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell"}
 READ_TOOLS = {"Read", "Grep", "Glob"}
