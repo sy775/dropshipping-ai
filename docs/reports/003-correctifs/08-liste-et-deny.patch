@@ -1,0 +1,38 @@
+Critic, troisième passe, bloquants 2 et 5 (tests rouges : 66a8595).
+- Bloquant 5 : tools/__init__.py, exécuté par `python -m tools.audit` avant le filet, est verrouillé (liste et règle
+  deny Edit).
+- Bloquant 2 : règles deny `Bash(gh api *)` et `Bash(gh auth token*)`, seconde barrière derrière le hook.
+
+diff --git a/tools/locked_paths.txt b/tools/locked_paths.txt
+--- a/tools/locked_paths.txt
++++ b/tools/locked_paths.txt
+@@ -9,6 +9,7 @@
+ tools/audit.py
+ tools/secret_scan.py
+ tools/mutation_check.py
++tools/__init__.py
+ .claude/settings.json
+ .claude/settings.local.json
+ .claude/agents/critic.md
+diff --git a/.claude/settings.json b/.claude/settings.json
+--- a/.claude/settings.json
++++ b/.claude/settings.json
+@@ -12,6 +12,7 @@
+       "Edit(tools/secret_scan.py)",
+       "Edit(tools/mutation_check.py)",
+       "Edit(.claude/settings.local.json)",
++      "Edit(tools/__init__.py)",
+       "Edit(.env)",
+       "Read(.env*)",
+       "Read(**/.env*)",
+@@ -24,7 +25,9 @@
+       "Bash(git filter-repo *)",
+       "Bash(gh repo edit *)",
+       "Bash(gh secret *)",
+-      "Bash(gh pr merge *)"
++      "Bash(gh pr merge *)",
++      "Bash(gh api *)",
++      "Bash(gh auth token*)"
+     ]
+   },
+   "hooks": {

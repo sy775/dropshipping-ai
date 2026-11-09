@@ -1,15 +1,18 @@
 # Rapport 003-outillage
 
-- Branche : `spec/003-outillage` ; HEAD : `696a90c` ; audit du 2026-11-09 14:20 UTC.
+- Branche : `spec/003-outillage` ; HEAD : `d9571a8` ; audit du 2026-11-09 17:41 UTC.
 - Résultat des étapes déterministes : **OK**.
-- Après cet audit : la seconde passe du critic a trouvé 4 bloquants, voir « Critic, seconde passe ». Les tests rouges
-  sont commités (`5b4db39`), et les correctifs attendent dans `docs/reports/003-correctifs/`. Ils touchent des fichiers
-  verrouillés, donc Younes les applique lui-même. Tant que ce n'est pas fait, pytest et la CI de la branche sont
-  rouges. `/audit` n'a pas été relancé.
+- Après cet audit (patches 01 à 05 appliqués par Younes, `d9571a8`), la troisième passe du critic a trouvé
+  5 bloquants. Voir « Critic, troisième passe ». Le test rouge est commité seul (`66a8595`, 73 échecs). Les
+  correctifs touchent des fichiers verrouillés : ils attendent dans `docs/reports/003-correctifs/` (patches 06
+  à 09). Tant qu'ils ne sont pas appliqués, pytest et la CI de la branche sont rouges.
 
 ## Commits
 
 ```
+d9571a8 Correctifs 003 (patches 01 à 05) appliqués par Younes après relecture externe
+eb87c8c Rapport 003 : défaut du hook signalé par le critic puis écarté par l'auteur, seconde passe du critic (4 bloquants), correctifs à appliquer par Younes (docs/reports/003-correctifs, patches 01 à 05) et limites connues
+5b4db39 Test rouge (critic, 4 bloquants, et relecture externe) : python isolé pour les hooks, réglages locaux et outils de l'audit verrouillés, dossiers parents bloqués, push limité à origin spec/<nom>, liste verrouillée unique
 696a90c Verrou des garde-fous de l'outillage (hook, réglages Claude Code, critic, CI, audit) : écriture bloquée par outil et par mention shell, lecture git permise, règles deny, filet de l'audit et de la CI, mutations m104-m109
 eac808b Mutations m092-m103 : règle par mention, lecture des fichiers d'environnement, filet de l'audit et de la CI
 718e23d Filet hors agent : l'audit et la CI (toute branche sauf main et human/*) échouent si un fichier protégé présent sur origin/main est modifié ou supprimé
@@ -37,9 +40,9 @@ ce8e5dd tools/secret_scan.py : arbre et historique complet, motifs de redact.py,
 | Étape | Résultat | Durée |
 | --- | --- | --- |
 | fichiers protégés inchangés | ok | 0 s |
-| pytest complet | ok | 117 s |
+| pytest complet | ok | 245 s |
 | secret_scan (arbre et historique) | ok | 2 s |
-| mutation_check (complet) | ok | 2110 s |
+| mutation_check (complet) | ok | 6263 s |
 
 ### fichiers protégés inchangés
 
@@ -54,16 +57,18 @@ aucun fichier protégé modifié
 Commande : `python -m pytest -p no:cacheprovider`
 
 ```
-...............................................s........................ [ 11%]
-........................................................................ [ 23%]
-........................................................................ [ 35%]
-........................................................................ [ 47%]
+...............................................s........................ [  9%]
+........................................................................ [ 19%]
+........................................................................ [ 29%]
+........................................................................ [ 38%]
+........................................................................ [ 48%]
 ........................................................................ [ 58%]
-........................................................................ [ 70%]
-........................................................................ [ 82%]
-........................................................................ [ 94%]
-...................................                                      [100%]
-610 passed, 1 skipped in 116.44s (0:01:56)
+........................................................................ [ 68%]
+........................................................................ [ 77%]
+........................................................................ [ 87%]
+........................................................................ [ 97%]
+...................                                                      [100%]
+738 passed, 1 skipped in 244.15s (0:04:04)
 ```
 
 ### secret_scan (arbre et historique)
@@ -82,10 +87,12 @@ OK : aucun secret (arbre de travail et historique complet).
 Commande : `python -m tools.mutation_check --base origin/main`
 
 ```
-**OK** : 109 / 109 mutation(s) tuée(s) (catalogue : 109 entrées ; durée 2109 s).
-- catalogue absent de origin/main : première introduction (109 entrées), contrôle des id non applicable
+**OK** : 118 / 118 mutation(s) tuée(s) (catalogue : 118 entrées ; durée 6263 s).
+- catalogue absent de origin/main : première introduction (118 entrées), contrôle des id non applicable
 
-Entrées ajoutées : m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034, m035, m036, m037, m038, m039, m040, m041, m042, m043, m044, m045, m046, m047, m048, m049, m050, m051, m052, m053, m054, m055, m056, m057, m058, m059, m060, m061, m062, m063, m064, m065, m066, m067, m068, m069, m070, m071, m072, m073, m074, m075, m076, m077, m078, m079, m080, m081, m082, m083, m084, m085, m086, m087, m088, m089, m090, m091, m092, m093, m094, m095, m096, m097, m098, m099, m100, m101, m102, m103, m104, m105, m106, m107, m108, m109
+Entrées ajoutées : m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034, m035, m036, m037, m038, m039, m040, m041, m042, m043, m044, m045, m046, m047, m048, m049, m050, m051, m052, m053, m054, m055, m056, m057, m058, m059, m060, m061, m062, m063, m064, m065, m066, m067, m068, m069, m070, m071, m072, m073, m074, m075, m076, m077, m078, m079, m080, m081, m082, m083, m084, m085, m086, m087, m088, m089, m090, m091, m092, m093, m094, m095, m096, m097, m098, m099, m100, m101, m102, m103, m104, m105, m106, m107, m108, m109, m110, m111, m112, m113, m114, m115, m116, m117, m118
+
+Tuées par délai : m041, m042, m043, m045, m046, m047, m048, m049, m050, m051, m052, m053, m054, m055, m056, m057, m058, m059, m060, m061, m062, m063, m064, m065, m066, m067, m068, m069, m070, m071, m072, m073, m074, m088, m094, m096, m097, m098, m106, m110, m113, m114, m115
 ```
 
 ## Critic
@@ -267,6 +274,125 @@ Choix d'interprétation, à confirmer par Younes avant d'appliquer :
 - **`.env.example` illisible par l'outil Read.** Une règle deny l'emporte sur toute autre règle : `Read(.env*)` interdit
   donc aussi `.env.example` à l'outil Read. Le hook, lui, le laisse passer, et `cat .env.example` reste permis.
 
+### Critic, troisième passe (HEAD `d9571a8`, après les patches 01 à 05)
+
+Audit `--full` préalable, à HEAD `d9571a8` : fichiers protégés inchangés, puis 738 passed et 1 skipped, secret_scan
+propre, 118 mutations sur 118 tuées. Sur ces 118, 43 sont tuées par délai, voir « Hypothèses ». Tableau du critic
+recopié tel quel :
+
+| Écart | Gravité | Preuve | Test qui échouerait |
+| --- | --- | --- | --- |
+| Le push vers main reste possible malgré le correctif « seul `git push [-u] origin spec/<nom>` » : par une commande enveloppée (`bash -c`, `( )`, `$( )`), par un alias git ou par la config `remote.origin.push`. Git utilise `remote.origin.push` comme table de correspondance quand la cible n'est pas écrite, donc `push origin spec/x` peut atterrir sur main. Les règles `deny` ne couvrent que les formes littérales. | bloquant | `tools/hooks/pre_tool_use.py:243-244` : `base in ("git", "git.exe")` (les jetons `(git`, `$(git` ou `git push …` entre guillemets ne sont pas reconnus) ; `:213-220` : les options globales `-c` sont sautées sans examen ; `:225-232` : `config` n'est pas contrôlé. | `tests/test_hooks.py` :<br>`@pytest.mark.parametrize("command", ['bash -c "git push origin HEAD:main"', "(git push origin HEAD:main)", "echo $(git push origin HEAD:main)", 'git -c "alias.p=push origin HEAD:main" p', 'git config alias.p "push origin HEAD:main"', "git -c remote.origin.push=refs/heads/spec/x:refs/heads/main push origin spec/x"])`<br>`def test_push_to_main_through_wrapper_alias_or_config_is_blocked(repo, command):`<br>`    _git(repo, "switch", "-q", "-c", "spec/x")`<br>`    rc, err = _hook("pre_tool_use.py", _cmd(command, repo))`<br>`    assert rc == 2 and "Bloqué" in err, command`<br>Échec attendu : les six commandes sortent aujourd'hui en rc 0, car aucun motif de FORBIDDEN ne s'applique et `_check_git` n'est appelé sur aucune (ou reçoit `p` ou `config`). |
+| La fusion et l'écriture directe sur main restent possibles par l'API GitHub. `gh pr merge` est bloqué, pas son équivalent `gh api`. | bloquant | `pre_tool_use.py:54-60` : FORBIDDEN liste seulement `gh repo edit`, `gh secret` et `gh pr merge`. | `tests/test_hooks.py` :<br>`@pytest.mark.parametrize("command", ["gh api -X PUT repos/o/r/pulls/1/merge", "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=0"])`<br>`def test_merge_or_ref_update_via_gh_api_is_blocked(repo, command):`<br>`    rc, err = _hook("pre_tool_use.py", _cmd(command, repo))`<br>`    assert rc == 2 and "Bloqué" in err, command`<br>Échec attendu : rc 0 aujourd'hui. |
+| Write et Edit vers un fichier verrouillé passent sous un alias Windows : point ou espace final, flux `::$DATA`. Win32 retire le point et l'espace finaux, et `::$DATA` désigne le contenu principal du fichier. Le dépôt tourne sous Windows. La règle `deny Edit(tools/hooks/pre_tool_use.py)` ne correspond pas non plus à ces chemins. | bloquant | `pre_tool_use.py:79-80` : `if low == protected or low.endswith("/" + protected)` compare la chaîne brute. | `tests/test_hooks.py` :<br>`@pytest.mark.parametrize("path", ["tools/hooks/pre_tool_use.py.", "tools/hooks/pre_tool_use.py ", "tools/hooks/pre_tool_use.py::$DATA", ".claude/settings.local.json."])`<br>`def test_windows_aliases_of_protected_files_are_blocked(path):`<br>`    rc, err = _hook("pre_tool_use.py", _write(path, "Write"), {"CLAUDE_PROJECT_DIR": str(REPO)})`<br>`    assert rc == 2 and "Bloqué" in err`<br>Échec attendu : `check_path` renvoie None, d'où rc 0. |
+| Le contrôle « ajout seul » du catalogue (patch 05) se contourne par une clé YAML en double. Ajouter `  old: …` ou `  new: …` en fin de fichier passe le contrôle de préfixe, et PyYAML garde silencieusement la dernière valeur : l'entrée finale du catalogue est modifiée. `compare_with_base` se contente de la lister, sans échouer. | bloquant | `tools/audit.py:133` : `return all(text.startswith(old.stdout) for text in texts)` ; `tools/mutation_check.py:126-127` : `changed_entries.append(...)`, sans erreur. | `tests/test_audit_tool.py` :<br>`def test_catalogue_duplicate_key_appended_fails(catalogue):`<br>`    repo, path = catalogue`<br>`    path.write_text(path.read_text(encoding="utf-8") + "  old: B\n", encoding="utf-8")`<br>`    _git(repo, "commit", "-q", "-am", "clé en double")`<br>`    assert yaml.safe_load(path.read_text(encoding="utf-8"))[1]["old"] == "B"`<br>`    changed = audit.guarded_changes(repo, "origin/main")`<br>`    assert len(changed) == 1 and changed[0].startswith(audit.CATALOGUE)`<br>Échec attendu : `guarded_changes` renvoie `[]`. Correctif possible : comparer aussi les entrées analysées de la base. |
+| Le filet de l'audit et de la CI se neutralise sans toucher un seul fichier verrouillé. `python -m tools.audit` exécute d'abord `tools/__init__.py`, puis importe `journal/redact.py` (audit.py:30). Aucun des deux n'est verrouillé, donc Write les accepte : l'un ou l'autre peut remplacer `guarded_changes`. La limite connue « le filet s'exécute avec le code de la branche » suppose qu'il faut modifier audit.py ou ci.yml, ce que le hook bloque. Sa gravité est donc sous-estimée. | bloquant | `tools/locked_paths.txt:5-22` (ni `tools/__init__.py` ni `journal/redact.py`) ; `tools/audit.py:30` : `from journal.redact import redact`. | `tests/test_audit_tool.py` :<br>`def test_code_run_before_the_filet_is_locked():`<br>`    from tools.hooks import pre_tool_use`<br>`    assert {"tools/__init__.py", "journal/redact.py"} <= set(pre_tool_use.PROTECTED)`<br>`    assert {"tools/__init__.py", "journal/redact.py"} <= set(audit.GUARDED)`<br>Échec attendu : les deux chemins manquent à la liste. Il reste à discuter un module à la racine qui masque la bibliothèque standard (`dataclasses.py`, chargé en tête par `-m`) : seul un statut obligatoire côté GitHub le règle. |
+| Le verrou de dossier (correctif du bloquant 4) se contourne par `tools/hooks/./` ou `tools//hooks`. Le motif n'admet que `.` ou `*` suivi d'une fin. L'effet est déjà couvert par la limite connue `git checkout X -- .`. | à discuter | `pre_tool_use.py:106` : `r"/?(?:\.|\*)?(?=$|[\s'\"`;|&)])"`. | Exemple : `git checkout HEAD~1 -- tools/hooks/./`, ajouté à `test_locked_dirs_are_blocked_for_shell`, passerait aujourd'hui en rc 0. |
+| `tests/conftest.py` n'est pas verrouillé. Un `collect_ignore = ["test_audit_guards.py", "test_hooks.py"]` fait passer pytest. Avec `--changed`, les mutations du hook ne sont pas relancées si le hook n'a pas changé, donc rien ne le signale. | à discuter | `tools/locked_paths.txt` : `tests/` ne bloque que la mention du dossier. | Aucun test proposé : décision de périmètre. |
+| Le critic n'est pas strictement en lecture seule. `pytest --junitxml=…`, `--basetemp=…` (vide le dossier visé) et `-p module` écrivent ou exécutent du code. Ce sont des options de pytest, que la spec autorise. | à discuter | `tools/hooks/critic_bash.py:46-49` : `if exe == "pytest": return None`. | Exemple : `check("python -m pytest --junitxml=docs/x.xml")` renvoie None. |
+| `python -I` n'empêche pas les `.pth` du site-packages. Si `python` dans le PATH est celui de `.venv` (non verrouillé), un `.pth` déposé s'exécute dans chaque hook. | à discuter | `.claude/settings.json:37,49`. | Dépend de l'environnement, pas de test proposé. |
+| L'arbre de travail contient une modification non commitée de `docs/reports/003-outillage.md`. | mineur | git status : `M docs/reports/003-outillage.md`. | – |
+
+Synthèse du critic : 5 bloquants, 4 à discuter.
+
+#### Bloquants : test rouge commité seul, correctifs à appliquer par Younes
+
+Les cinq points ont été vérifiés dans le code avant d'écrire les tests. Chaque commande ou chemin cité passait.
+
+**1. Test rouge commité seul** (`66a8595`, `tests/test_hooks.py` et `tests/test_audit_tool.py`) : 73 échecs. Les tests
+du critic y sont élargis :
+
+```
+ 30 test_push_through_wrapper_alias_or_config_is_blocked     (bloquant 1 : 17 commandes × Bash/PowerShell)
+  1 test_push_is_blocked_when_repo_config_redirects_it       (bloquant 1 : remote.origin.push déjà configuré)
+  1 test_git_alias_is_blocked                                (bloquant 1 : alias déjà configuré)
+  5 test_git_config_files_are_blocked_for_write_tools        (bloquant 1 : .git/, .gitconfig, .config/git/)
+  5 test_gh_api_writes_and_token_are_blocked                 (bloquant 2, plus graphql et gh auth token)
+ 14 test_windows_aliases_of_protected_files_are_blocked      (bloquant 3)
+  4 test_catalogue_append_that_rewrites_a_base_entry_fails   (bloquant 4 : clé en double, id repris)
+  1 test_catalogue_without_final_newline_cannot_be_extended_on_the_same_line (bloquant 4)
+  1 test_code_run_before_the_filet_is_locked                 (bloquant 5)
+  1 test_project_settings_wire_hooks_and_deny_rules          (deny gh api, Edit(tools/__init__.py))
+ 10 test_locked_files_*, test_locked_list_*                  (tools/__init__.py ajouté à LOCKED)
+```
+
+Certains cas passent déjà et restent comme non-régression : `{ git push …; }` et `env git push …` (le hook trouvait
+`git` plus loin dans le segment), `.env.` et `.env::$DATA` (préfixe `.env`). Le test « les usages permis passent »
+(`test_direct_push_and_config_reads_still_pass`) est vert.
+
+**2. Correctifs** dans `docs/reports/003-correctifs/`, à appliquer dans l'ordre sur `66a8595` :
+
+| Patch | Fichiers | Contenu |
+| --- | --- | --- |
+| `06-hook-push-gh-chemins.patch` | `tools/hooks/pre_tool_use.py` | Bloquant 1 : « push » avec « git » hors d'une commande git directe ; `git -c` hors lecture ; `git config` en écriture ; alias git et `remote.origin.push` configurés (le hook interroge `git config`) ; option globale autre que `-C` avant push ; `.git/` et configuration git bloqués par outil et par le shell. Bloquant 2 : `gh api`, `gh auth token`. Bloquant 3 : nom réel des alias Win32. |
+| `07-filet-catalogue-et-import.patch` | `tools/audit.py` | Bloquant 4 : l'ajout au catalogue commence une nouvelle entrée et ne reprend aucun id de la base. Bloquant 5 : `journal.redact` importé dans `run_steps`, après le filet |
+| `08-liste-et-deny.patch` | `tools/locked_paths.txt`, `.claude/settings.json` | `tools/__init__.py` verrouillé ; deny `Edit(tools/__init__.py)`, `Bash(gh api *)`, `Bash(gh auth token*)` |
+| `09-mutations.patch` | `tools/mutations.yaml` | m119 à m134, une par garde ajoutée. Ce patch dépend des patches 06 à 08 : avant eux, le `old` de ces mutations est introuvable |
+
+- **Validation.** Comme pour 01 à 05, aucun patch n'a été appliqué, ni dans le dépôt ni dans une copie. Ont été
+  vérifiés :
+  - le nombre de lignes et la ligne de départ de chaque hunk, par un script qui ne lit que les patches ;
+  - le YAML des 16 mutations, analysé par PyYAML ;
+  - l'absence de mutation existante qui viserait un texte modifié (catalogue en ajout seul).
+
+  Les lignes de contexte sont recopiées des fichiers lus. Après application : `python -m tools.audit --full`, puis
+  le critic.
+- **Choix de correction, à confirmer :**
+  - **Bloquant 5.** `journal/redact.py` reste modifiable : c'est du code métier, et le verrouiller interdirait toute
+    évolution par une spec. Le filet ne l'importe plus avant le contrôle. Le job CI, qui lance `--protected-only`,
+    ne l'exécute donc jamais. En local, `/audit` l'exécute après le contrôle : il pourrait encore réécrire le
+    rapport, mais pas le résultat de la CI.
+  - **Bloquant 1, faux positif nouveau.** Une commande dont un segment contient « git » et « push » sans commencer
+    par `git` est bloquée, par exemple `python -m pytest -k "git and push"`. Un `git commit -m "… push …"` reste
+    permis.
+  - **Bloquant 1, coût.** Chaque commande git lance un `git config --get alias.<sous-commande>`, et chaque push un
+    `git config --get-all remote.origin.push`. Le délai est de 10 s ; si git ne répond pas, la commande est permise.
+
+#### Points « à discuter » : justification un par un
+
+- **`tools/hooks/./`, `tools//hooks`.** Non traité. Même effet que `git checkout X -- .`, déjà en limite connue.
+  Un motif plus large ne fermerait pas la classe : chemins assemblés, variables. Ajouté aux limites connues.
+- **`tests/conftest.py` non verrouillé** (`collect_ignore`). Non traité, c'est une décision de périmètre pour Younes.
+  Recommandation : l'ajouter à la liste verrouillée. Le dossier `tests/` n'est verrouillé que pour la mention seule,
+  et chaque spec doit pouvoir ajouter des tests. Un `conftest.py` modifié apparaît par ailleurs dans le diff relu par
+  le critic.
+- **Options de pytest pour le critic.** Inchangé depuis la première passe : la spec autorise pytest au critic. Les
+  écritures possibles (`--junitxml`, `--basetemp`) restent dans le dépôt de travail et ne touchent ni git ni le
+  réseau. Restreindre les options est à décider par Younes : `critic_bash.py` est verrouillé.
+- **`.pth` dans le site-packages du `python` du PATH.** Rejoint la limite « python résolu par le PATH », ajoutée
+  ci-dessous à la demande de Younes. Non traité ; à tester en réel.
+- **Point mineur, rapport non commité** : commité avec ce rapport.
+
+### Tests réels (session Claude Code, hooks actifs, 2026-11-09)
+
+Chaque action a réellement été tentée ; aucune n'a été refusée par Claude lui-même.
+
+| Action tentée | Outil | Résultat | Mécanisme qui bloque |
+| --- | --- | --- | --- |
+| `git push --dry-run origin main` | Bash | refusé | hook : « PreToolUse:Bash hook error … `git push --dry-run` : option interdite (seul -u est permis) » |
+| `git push --dry-run origin human/test` | Bash | refusé | hook : même message (`--dry-run` refusé avant l'examen de la branche) |
+| Création de `.env.test` | Write | refusé | règle deny : « File is covered by a Read deny rule in your permission settings and cannot be written » (`Read(.env*)`) |
+| Création de `.env.test` (`echo TEST=1 > .env.test`) | Bash | refusé | hook : « … la commande mentionne .env.test : les fichiers .env* (sauf .env.example) sont interdits, même en lecture » |
+| Ajout d'une ligne à `tests/test_audit_guards.py` | Edit | refusé | règle deny : « File is in a directory that is denied by your permission settings » (`Edit(tests/test_audit_guards.py)`) |
+| Ajout d'une ligne (`echo … >> tests/test_audit_guards.py`) | Bash | refusé | hook : « … la commande mentionne tests/test_audit_guards.py (protégé) : seules les lectures git diff, log, show et status sont permises » |
+| `{"disableAllHooks": true}` dans `.claude/settings.local.json` | Write | refusé | règle deny : « File is in a directory that is denied by your permission settings » (`Edit(.claude/settings.local.json)`) |
+| Même écriture par `echo … > .claude/settings.local.json` | Bash | refusé | hook : « … la commande mentionne .claude/settings.local.json (protégé) … » |
+| `git checkout HEAD -- .github` | Bash | refusé | hook : « … la commande mentionne .github/ (protégé) … » |
+
+Contrôles après les tests :
+- `git status --short` : ` M docs/reports/003-outillage.md`, soit le seul rapport régénéré par l'audit.
+- `Test-Path .env.test` et `Test-Path .claude/settings.local.json` : la commande PowerShell elle-même est refusée
+  par le hook, car elle mentionne `.env.test` (faux positif attendu). Absence vérifiée autrement :
+  - `git status --short --ignored` ne liste que `.env`, sans `.env.test` ;
+  - Glob `.claude/*` ne renvoie que `.claude/settings.json`.
+
+  Résultat : `False` et `False`.
+- Limite de ces tests : les deux push ont été refusés à cause de `--dry-run`, pas de leur destination. Le refus de
+  `main` et de `human/*` en tant que tels n'est démontré que par pytest (`test_forbidden_commands_are_blocked`,
+  `test_only_push_of_one_spec_branch_to_origin_is_allowed`). Un `git push origin main` sans `--dry-run` n'a pas été
+  tenté, car il pousserait vraiment si le hook échouait. Pour l'outil Write et Edit, c'est la règle deny qui répond
+  en premier : le hook n'a donc pas été exercé en réel sur ces deux outils.
+
 ### Limites connues (écrites, non traitées)
 
 Ces contrôles réduisent le risque mais ne forment pas une frontière de sécurité.
@@ -279,6 +405,21 @@ Ces contrôles réduisent le risque mais ne forment pas une frontière de sécur
   - Copie de dossiers entiers depuis un autre dossier courant (`cd tools && cp -r x hooks`).
   - Commandes qui réécrivent tout l'arbre sans nommer de chemin (`git checkout X -- .`, `git reset --hard X`,
     `git stash pop`).
+  - Dossier verrouillé écrit sous une autre forme : `tools/hooks/./`, `tools//hooks` (critic, troisième passe).
+  - Noms courts Win32 (8.3, `PRE_TO~1.PY`) s'ils sont activés sur le volume : non ramenés au nom réel, non testé.
+  - **Script écrit puis exécuté.** Un fichier `.py` ou `.sh` écrit par l'outil Write, puis lancé (`python x.py`),
+    peut pousser vers main, appeler l'API GitHub ou écrire un fichier verrouillé sans que la commande le dise. Les
+    correctifs 06 à 09 ferment les formes écrites dans la commande, pas celle-ci. **Seule barrière réelle pour main
+    : un ruleset GitHub sur main** (pull request obligatoire, statuts CI obligatoires dont `protected_files`, pas de
+    contournement, pas de force push). À configurer par Younes.
+- **Hook lancé par `python` résolu via le PATH** (demande de Younes). Les commandes de hook de
+  `.claude/settings.json` et de `critic.md` appellent `python -I`. Le premier `python` trouvé dans le PATH est donc
+  exécuté, quel qu'il soit. Sous Windows, un exécutable planté pourrait le remplacer, par exemple `python.cmd` ou
+  `python.bat` à la racine du dépôt si le dossier courant est consulté, ou un dossier du PATH accessible en
+  écriture. Ce faux python peut répondre 0 à tout : le hook ne bloque alors plus rien. De même, `-I` n'empêche pas
+  les `.pth` du site-packages de ce python. Si c'est celui de `.venv` (non verrouillé), un `.pth` déposé s'exécute
+  dans chaque hook (critic, troisième passe). **À tester en réel**, puis éventuellement corriger par Younes en
+  donnant un chemin absolu à l'interpréteur dans les commandes de hook. Fichiers verrouillés.
 - **Le filet s'exécute avec le code de la branche.** Le job CI lance le `tools/audit.py` et le `ci.yml` de la branche.
   Une branche qui les modifie peut désactiver le contrôle censé la signaler. Seul un statut obligatoire côté GitHub
   (ruleset sur main) rendrait le filet vraiment indépendant : à configurer par Younes. Par ailleurs, les fichiers
@@ -299,6 +440,12 @@ Ces contrôles réduisent le risque mais ne forment pas une frontière de sécur
 
 - **Catalogue de mutations.** Aucune entrée modifiée (avant / après : néant). Cet audit utilise l'exemption « première introduction », car `tools/mutations.yaml` est absent d'`origin/main`. Après fusion, l'exemption ne s'applique plus.
 - **Durée de mutation_check** (hypothèse ouverte de la spec). 330 s pour 91 mutations avec 4 processus, quand pytest durait environ 9 s. 686 s une fois les tests de l'outillage ajoutés : pytest complet passe à 48 s, surtout à cause des dépôts git temporaires et des sous-processus des hooks. En CI (runner à 4 vCPU), le job a un délai de 90 min ; la durée réelle sera à relever au premier passage nocturne.
+- **Mutations tuées par délai (audit du 2026-11-09 17:41 UTC).** Durée totale : 6263 s pour 118 mutations, contre
+  2110 s pour 109 au passage précédent. 43 mutations sont « tuées par délai » : m041 à m074 (sauf m044), m088,
+  m094, m096 à m098, m106, m110 et m113 à m115. Une mutation tuée par délai n'est pas prouvée tuée par un test
+  rouge : elle peut cacher une survivante, comme le critic l'a noté dès la première passe. Cause probable : pytest
+  complet passé de 117 s à 245 s, et machine chargée. À vérifier par Younes : relancer ces id seuls avec un délai
+  plus long, ou mesurer en CI.
 - **Exceptions du scan de secrets :**
   1. `journal/redact.py`, arbre et historique : le littéral des regex de masquage uniquement.
   2. `tests/test_alerts.py`, historique uniquement : la chaîne exacte du faux en-tête Authorization (le mot `Bearer` suivi de `abc.def-123`), désormais construite à l'exécution dans `tests/fakes.py`.

@@ -1,0 +1,74 @@
+Critic, troisième passe, bloquants 4 et 5 (tests rouges : 66a8595).
+- Bloquant 4 : catalogue en ajout seul, contrôle renforcé. L'ajout doit commencer une nouvelle entrée (`- id:`) après
+  une fin de ligne et ne reprendre aucun id de la base : une clé ajoutée à la dernière entrée (`  old: B`), que
+  PyYAML garde à la place de l'ancienne, est refusée.
+- Bloquant 5 : `journal.redact` (non verrouillé) n'est plus importé au chargement du module, mais dans run_steps,
+  après le filet. `python -m tools.audit --protected-only` n'exécute donc que la bibliothèque standard et tools/
+  (tools/__init__.py est verrouillé par le patch 08).
+
+diff --git a/tools/audit.py b/tools/audit.py
+--- a/tools/audit.py
++++ b/tools/audit.py
+@@ -7,9 +7,12 @@
+   ou supprimé sur la branche (commits depuis la base, ou arbre de travail). Liste unique tools/locked_paths.txt,
+   partagée avec le hook ; on contrôle l'union de la liste de la branche et de celle de la base. Un fichier absent
+   de la base (première introduction) n'est pas contrôlé ; base ou liste introuvable = échec. tools/mutations.yaml
+-  est en ajout seul : échec si une ligne présente à la base de la branche est modifiée ou supprimée.
++  est en ajout seul : échec si une ligne présente à la base de la branche est modifiée ou supprimée, ou si l'ajout
++  prolonge une entrée de la base (clé en double, id repris : critic, troisième passe).
+   Une modification voulue se fait par Younes sur une branche human/*.
+   `python -m tools.audit --protected-only` ne lance que ce contrôle (CI, toute branche sauf main et human/*).
++  Avant ce contrôle, seuls la bibliothèque standard et tools/ (verrouillé) sont importés ; journal.redact ne l'est
++  qu'ensuite, dans run_steps (critic, troisième passe).
+ - Chaque étape est bloquante : arrêt à la première en échec (les suivantes sont notées « non lancée »).
+ - Mutations : `--changed` par défaut ; toutes si `--full` ou si le catalogue diffère de la base (ou en est absent).
+ - Les sections rédigées après coup (Critic, Hypothèses, Écarts avec la documentation officielle) sont conservées
+@@ -27,8 +30,6 @@
+ from pathlib import Path
+ from typing import Callable
+
+-from journal.redact import redact
+-
+ REPO_ROOT = Path(__file__).resolve().parents[1]
+ MANUAL_MARKER = "## Critic"
+ MANUAL_DEFAULT = """## Critic
+@@ -118,7 +119,11 @@
+     return changed
+
+
++_ENTRY_ID = re.compile(r"^- id:\s*['\"]?([\w-]+)", re.M)
++
++
+ def catalogue_append_only(repo: Path, base: str) -> bool:
+-    """Le catalogue de la merge-base est un préfixe du catalogue commité et de celui de l'arbre de travail."""
++    """Le catalogue de la merge-base est un préfixe du catalogue commité et de celui de l'arbre de travail, et
++    l'ajout ne prolonge aucune entrée de la base (critic, troisième passe : clé en double, id repris)."""
+     merge_base = _git(repo, "merge-base", base, "HEAD").stdout.strip()
+     if not merge_base:
+@@ -130,7 +135,16 @@
+     work = repo / CATALOGUE
+     texts = [head.stdout if head.returncode == 0 else "",
+              work.read_bytes().decode("utf-8").replace("\r\n", "\n") if work.is_file() else ""]
+-    return all(text.startswith(old.stdout) for text in texts)
++    base_ids = set(_ENTRY_ID.findall(old.stdout))
++    for text in texts:
++        if not text.startswith(old.stdout):
++            return False
++        added = text[len(old.stdout):]
++        if added and (not old.stdout.endswith("\n") or not added.startswith("- id:")):
++            return False                                   # clé ajoutée à la dernière entrée de la base
++        if base_ids & set(_ENTRY_ID.findall(added)):
++            return False                                   # id de la base repris par une entrée ajoutée
++    return True
+
+
+ def guarded_step(repo: Path, base: str) -> Step:
+@@ -154,7 +168,8 @@
+     ]
+
+
+ def run_steps(steps: list[Step], cwd: Path, runner: Runner = default_runner) -> bool:
++    from journal.redact import redact            # après le filet (critic, troisième passe) : module non verrouillé
+     for step in steps:
+         start = time.monotonic()
+         rc, output = runner(step.command, cwd)

@@ -1,0 +1,90 @@
+Critic, troisième passe : mutations m119 à m134 des correctifs 06 à 08 (ajout seul, en fin de catalogue). Elles ne
+peuvent être ajoutées qu'avec ces correctifs : avant eux, leur `old` est introuvable et mutation_check échoue.
+
+diff --git a/tools/mutations.yaml b/tools/mutations.yaml
+--- a/tools/mutations.yaml
++++ b/tools/mutations.yaml
+@@ -605,3 +605,83 @@
+   file: tools/audit.py
+   old: 'if not catalogue_append_only(repo, base):'
+   new: 'if False:'
++- id: m119
++  description: 'gh api permis (fusion ou référence modifiée par l''API)'
++  file: tools/hooks/pre_tool_use.py
++  old: '(re.compile(r"\bgh\s+api\b"), "gh api"),'
++  new: ''
++- id: m120
++  description: 'push enveloppé (bash -c, $( ), env, variable en tête) non détecté'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if _indirect_push(segment, tokens):'
++  new: 'if False:'
++- id: m121
++  description: 'git config en écriture permis (alias, remote.origin.push)'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if sub == "config" and not _GIT_CONFIG_READ.intersection(tokens[i + 1:]):'
++  new: 'if False:'
++- id: m122
++  description: 'remote.origin.push configuré ignoré au moment du push'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if reason is None and _git_config(cwd, "--get-all", "remote.origin.push"):'
++  new: 'if False:'
++- id: m123
++  description: 'alias git permis'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if _git_config(cwd, "--get", f"alias.{sub}"):'
++  new: 'if False:'
++- id: m124
++  description: 'git -c permis hors lecture'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if config_option and sub not in _GIT_READ_ONLY:'
++  new: 'if False:'
++- id: m125
++  description: 'option globale autre que -C permise avant push (--git-dir)'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if other_option:'
++  new: 'if False:'
++- id: m126
++  description: 'alias Win32 d''un chemin (point final, flux ::$DATA) non ramené au nom réel'
++  file: tools/hooks/pre_tool_use.py
++  old: 'rel = _win32_canonical(_relative(path, project_dir))'
++  new: 'rel = _relative(path, project_dir)'
++- id: m127
++  description: 'dossier .git/ et configuration git écrits par outil'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if _is_git_config_path(low):'
++  new: 'if False:'
++- id: m128
++  description: 'dossier .git/ et configuration git mentionnés au shell'
++  file: tools/hooks/pre_tool_use.py
++  old: 'if git_config:'
++  new: 'if False:'
++- id: m129
++  description: 'gh auth token permis'
++  file: tools/hooks/pre_tool_use.py
++  old: '(re.compile(r"\bgh\s+auth\s+token\b"), "gh auth token"),'
++  new: ''
++- id: m130
++  description: 'catalogue : clé ajoutée à la dernière entrée de la base acceptée'
++  file: tools/audit.py
++  old: 'if added and (not old.stdout.endswith("\n") or not added.startswith("- id:")):'
++  new: 'if False:'
++- id: m131
++  description: 'catalogue : id de la base repris par une entrée ajoutée'
++  file: tools/audit.py
++  old: 'if base_ids & set(_ENTRY_ID.findall(added)):'
++  new: 'if False:'
++- id: m132
++  description: 'filet : journal.redact (non verrouillé) importé avant le contrôle'
++  file: tools/audit.py
++  old: "from typing import Callable\n"
++  new: "from typing import Callable\nfrom journal.redact import redact\n"
++- id: m133
++  description: 'verrou : tools/__init__.py retiré de la liste'
++  file: tools/locked_paths.txt
++  old: "tools/__init__.py\n"
++  new: ''
++- id: m134
++  description: 'règle deny gh api retirée'
++  file: .claude/settings.json
++  old: '"Bash(gh api *)",'
++  new: '"Bash(gh api)",'
