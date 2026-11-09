@@ -467,3 +467,64 @@
   file: llm/adapter.py
   old: "if dt.datetime.fromisoformat(r[\"ts\"]) > limit:\n            continue"
   new: "if False:\n            continue"
+# Relecture externe de la spec 003 : fichiers protégés mentionnés dans une commande shell, lecture de .env*.
+- id: m092
+  description: 'hook : règle par mention retirée pour Bash et PowerShell'
+  file: tools/hooks/pre_tool_use.py
+  old: 'return check_mentions(command) or check_command(command, data.get("cwd") or project_dir)'
+  new: 'return check_command(command, data.get("cwd") or project_dir)'
+- id: m093
+  description: 'hook : mention de .env* ignorée dans une commande'
+  file: tools/hooks/pre_tool_use.py
+  old: 'env = env_mention(text)'
+  new: 'env = None'
+- id: m094
+  description: 'hook : redirection ou substitution acceptée dans une lecture git'
+  file: tools/hooks/pre_tool_use.py
+  old: "if _UNSAFE_IN_GIT_READ.search(segment):\n        return False"
+  new: "if False:\n        return False"
+- id: m095
+  description: 'hook : toute sous-commande git acceptée comme lecture'
+  file: tools/hooks/pre_tool_use.py
+  old: 'return bool(rest) and rest[0] in _GIT_READ_ONLY'
+  new: 'return bool(rest)'
+- id: m096
+  description: 'hook : .env.example plus exempté'
+  file: tools/hooks/pre_tool_use.py
+  old: 'if m.group(1).lower() != ".env.example":'
+  new: 'if True:'
+- id: m097
+  description: 'hook : Read, Grep et Glob non contrôlés'
+  file: tools/hooks/pre_tool_use.py
+  old: 'return check_read(tool, tool_input)'
+  new: 'return None'
+- id: m098
+  description: 'hook : champ glob de Grep ignoré'
+  file: tools/hooks/pre_tool_use.py
+  old: '"Grep": ("path", "glob")'
+  new: '"Grep": ("path",)'
+- id: m099
+  description: 'audit : échec des fichiers protégés sans effet'
+  file: tools/audit.py
+  old: 'ok = guard.status == "ok" and run_steps(steps, repo, runner)'
+  new: 'ok = run_steps(steps, repo, runner)'
+- id: m100
+  description: 'audit : modifications non commitées des fichiers protégés ignorées'
+  file: tools/audit.py
+  old: 'if committed != 0 or local != 0:'
+  new: 'if committed != 0:'
+- id: m101
+  description: 'audit : base introuvable acceptée (contrôle ouvert)'
+  file: tools/audit.py
+  old: 'return [f"(base {base} introuvable)"]'
+  new: 'return []'
+- id: m102
+  description: 'CI : job des fichiers protégés limité à main'
+  file: .github/workflows/ci.yml
+  old: "if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/human/')"
+  new: "if: github.ref == 'refs/heads/main'"
+- id: m103
+  description: 'CI : contrôle des fichiers protégés neutralisé'
+  file: .github/workflows/ci.yml
+  old: '- run: python -m tools.audit --protected-only --base origin/main'
+  new: '- run: "true"'
