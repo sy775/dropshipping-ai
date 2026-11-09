@@ -208,7 +208,9 @@ def test_shell_allowed_mentions_pass(repo, tool, command):
 LOCKED = ("tools/hooks/pre_tool_use.py", "tools/hooks/critic_bash.py", ".claude/settings.json",
           ".claude/agents/critic.md", ".github/workflows/ci.yml", "tools/audit.py",
           # Critic, bloquant 2, et relecture externe : réglages locaux, outils de l'audit, liste partagée.
-          ".claude/settings.local.json", "tools/secret_scan.py", "tools/mutation_check.py", "tools/locked_paths.txt")
+          ".claude/settings.local.json", "tools/secret_scan.py", "tools/mutation_check.py", "tools/locked_paths.txt",
+          # Critic, 3e passe, bloquant 5 : code exécuté par `python -m tools.audit` avant le filet.
+          "tools/__init__.py")
 # Critic, bloquant 4 : dossiers parents des fichiers verrouillés (restauration ou copie du dossier entier).
 LOCKED_DIRS = ("tools/", "tools/hooks/", ".claude/", ".claude/agents/", ".github/", ".github/workflows/", "tests/")
 LOCKED_LIST = REPO / "tools" / "locked_paths.txt"
@@ -326,6 +328,104 @@ def test_only_push_of_one_spec_branch_to_origin_is_allowed(repo, command):
     _git(repo, "switch", "-q", "-c", "spec/x")
     rc, err = _hook("pre_tool_use.py", _cmd(command, repo))
     assert rc == 2 and "Bloqué" in err, command
+
+
+# ---------------------------------------------------------------- critic, troisième passe, bloquant 1 : push indirect
+# Commande enveloppée, alias git ou configuration remote.origin.push : la forme écrite ne dit plus où va le push.
+
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
+@pytest.mark.parametrize("command", [
+    'bash -c "git push origin HEAD:main"',
+    "sh -c 'git push origin main'",
+    "(git push origin HEAD:main)",
+    "{ git push origin HEAD:main; }",
+    "echo $(git push origin HEAD:main)",
+    "echo `git push origin HEAD:main`",
+    "env git push origin HEAD:main",
+    'git -c "alias.p=push origin HEAD:main" p',
+    'git config alias.p "push origin HEAD:main"',
+    "git config remote.origin.push refs/heads/spec/x:refs/heads/main",
+    "git -c remote.origin.push=refs/heads/spec/x:refs/heads/main push origin spec/x",
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.push GIT_CONFIG_VALUE_0=spec/x:main git push origin spec/x",
+    "powershell -Command \"git push origin HEAD:main\"",
+    "git --git-dir /tmp/x push origin spec/x",
+    "GIT_DIR=/tmp/x git push origin spec/x",
+    "cp /tmp/c .git/config",
+    "Copy-Item x .git\\config",
+])
+def test_push_through_wrapper_alias_or_config_is_blocked(repo, tool, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo, tool))
+    assert rc == 2 and "Bloqué" in err, command
+
+
+def test_push_is_blocked_when_repo_config_redirects_it(repo):
+    # Configuration écrite à l'avance (par exemple dans .git/config) : `git push origin spec/x` irait sur main.
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    _git(repo, "config", "remote.origin.push", "refs/heads/spec/x:refs/heads/main")
+    rc, err = _hook("pre_tool_use.py", _cmd("git push origin spec/x", repo))
+    assert rc == 2 and "remote.origin.push" in err
+
+
+def test_git_alias_is_blocked(repo):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    _git(repo, "config", "alias.p", "push origin HEAD:main")
+    rc, err = _hook("pre_tool_use.py", _cmd("git p", repo))
+    assert rc == 2 and "alias" in err
+
+
+@pytest.mark.parametrize("path", [".git/config", ".git/hooks/pre-push", "C:/Users/x/.gitconfig", "~/.gitconfig",
+                                  "C:/Users/x/.config/git/config"])
+def test_git_config_files_are_blocked_for_write_tools(path):
+    rc, err = _hook("pre_tool_use.py", _write(path, "Write"), {"CLAUDE_PROJECT_DIR": str(REPO)})
+    assert rc == 2 and "Bloqué" in err, path
+
+
+@pytest.mark.parametrize("command", [
+    "git push origin spec/xxx",
+    "git push -u origin spec/003-outillage",
+    "git config --get remote.origin.url",
+    "git config --list",
+    "git log --oneline --grep push",
+    "git status",
+])
+def test_direct_push_and_config_reads_still_pass(repo, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    assert _hook("pre_tool_use.py", _cmd(command, repo)) == (0, ""), command
+
+
+# ---------------------------------------------------------------- critic, troisième passe, bloquant 2 : gh api
+
+@pytest.mark.parametrize("command", [
+    "gh api -X PUT repos/o/r/pulls/1/merge",
+    "gh api --method PATCH repos/o/r/git/refs/heads/main -f sha=0",
+    "gh api repos/o/r/merges -f base=main -f head=spec/x",
+    "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh auth token",
+])
+def test_gh_api_writes_and_token_are_blocked(repo, command):
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo))
+    assert rc == 2 and "Bloqué" in err, command
+
+
+# ---------------------------------------------------------------- critic, troisième passe, bloquant 3 : alias Windows
+
+@pytest.mark.parametrize("tool", ["Write", "Edit"])
+@pytest.mark.parametrize("path", [
+    "tools/hooks/pre_tool_use.py.",
+    "tools/hooks/pre_tool_use.py ",
+    "tools/hooks/pre_tool_use.py. . ",
+    "tools/hooks/pre_tool_use.py::$DATA",
+    "tools/hooks/pre_tool_use.py:flux",
+    ".claude/settings.local.json.",
+    "tools./hooks /pre_tool_use.py",
+    ".env.",
+    ".env::$DATA",
+])
+def test_windows_aliases_of_protected_files_are_blocked(tool, path):
+    for form in (path, str(REPO).replace("\\", "/") + "/" + path):
+        rc, err = _hook("pre_tool_use.py", _write(form, tool), {"CLAUDE_PROJECT_DIR": str(REPO)})
+        assert rc == 2 and "Bloqué" in err, form
 
 
 # ---------------------------------------------------------------- critic, bloquant 1 : python -I

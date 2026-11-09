@@ -2,6 +2,7 @@
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -228,6 +229,42 @@ def test_catalogue_line_of_base_changed_fails(catalogue, commit, new_text):
     assert audit.main(["--protected-only"], repo=repo) == 1
 
 
+@pytest.mark.parametrize("appended", [
+    "  old: B\n",                                     # critic, 3e passe : clé en double, PyYAML garde la dernière
+    "  new: X\n",                                     # clé ajoutée à la dernière entrée de la base
+    "\n  old: B\n",
+    "- id: m002\n  old: B\n",                         # id déjà présent à la base
+])
+def test_catalogue_append_that_rewrites_a_base_entry_fails(catalogue, appended):
+    repo, path = catalogue
+    path.write_text(path.read_text(encoding="utf-8") + appended, encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "ajout qui réécrit une entrée")
+    changed = audit.guarded_changes(repo, "origin/main")
+    assert len(changed) == 1 and changed[0].startswith(audit.CATALOGUE), appended
+
+
+def test_catalogue_without_final_newline_cannot_be_extended_on_the_same_line(repo):
+    path = repo / audit.CATALOGUE
+    path.write_text("- id: m001\n  old: a", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "catalogue sans fin de ligne")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    path.write_text("- id: m001\n  old: ab\n", encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "prolonge la dernière ligne")
+    assert len(audit.guarded_changes(repo, "origin/main")) == 1
+
+
+def test_code_run_before_the_filet_is_locked():
+    # Critic, 3e passe, bloquant 5 : `python -m tools.audit` exécute tools/__init__.py, puis ses imports, avant le
+    # contrôle. Tout ce code doit être verrouillé, ou ne pas être importé par le filet.
+    assert "tools/__init__.py" in audit.GUARDED
+    code = ("import sys; import tools.audit; "
+            "bad = sorted(m for m in sys.modules if m.split('.')[0] not in ('tools',) "
+            "and m.split('.')[0] not in sys.stdlib_module_names); print(bad)")
+    out = subprocess.run([sys.executable, "-c", code], cwd=REPO, capture_output=True, text=True, encoding="utf-8")
+    assert out.returncode == 0 and out.stdout.strip() == "[]", out.stdout + out.stderr
+
+
 def test_guarded_missing_base_fails(repo):
     assert audit.main(["--protected-only", "--base", "origin/absente"], repo=repo) == 1
 
@@ -262,6 +299,7 @@ def test_project_settings_wire_hooks_and_deny_rules():
     assert "Edit(tests/test_audit_guards.py)" in deny and "Bash(gh pr merge *)" in deny
     assert {"Read(.env*)", "Read(**/.env*)"} <= set(deny)
     assert {f"Edit({path})" for path in audit.GUARDED} <= set(deny)              # fichiers verrouillés
+    assert {"Bash(gh api *)", "Bash(gh auth token*)"} <= set(deny)              # critic, 3e passe, bloquant 2
 
 
 def test_critic_is_read_only():
