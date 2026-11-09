@@ -258,10 +258,13 @@ def test_code_run_before_the_filet_is_locked():
     # Critic, 3e passe, bloquant 5 : `python -m tools.audit` exécute tools/__init__.py, puis ses imports, avant le
     # contrôle. Tout ce code doit être verrouillé, ou ne pas être importé par le filet.
     assert "tools/__init__.py" in audit.GUARDED
-    code = ("import sys; import tools.audit; "
-            "bad = sorted(m for m in sys.modules if m.split('.')[0] not in ('tools',) "
+    # Relecture externe : `-I -S` (ni site, ni sitecustomize, ni _distutils_hack) et comparaison avant / après
+    # l'import, pour ne compter que ce que `import tools.audit` charge (ni __main__ ni l'installation de Python).
+    code = (f"import sys; sys.path.insert(0, {str(REPO)!r}); before = set(sys.modules); import tools.audit; "
+            "new = set(sys.modules) - before; "
+            "bad = sorted(m for m in new if m.split('.')[0] != 'tools' "
             "and m.split('.')[0] not in sys.stdlib_module_names); print(bad)")
-    out = subprocess.run([sys.executable, "-c", code], cwd=REPO, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run([sys.executable, "-I", "-S", "-c", code], capture_output=True, text=True, encoding="utf-8")
     assert out.returncode == 0 and out.stdout.strip() == "[]", out.stdout + out.stderr
 
 
