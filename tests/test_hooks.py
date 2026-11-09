@@ -2,6 +2,7 @@
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -112,7 +113,6 @@ def test_push_after_switching_to_main_is_blocked(repo, command):
 @pytest.mark.parametrize("command", [
     "git push origin spec/xxx",
     "git push -u origin spec/003-outillage",
-    "git push",                                          # branche courante spec/x
     "git status",
     "git log --oneline -3",
     ".venv/Scripts/python.exe -m pytest -q",
@@ -206,7 +206,12 @@ def test_shell_allowed_mentions_pass(repo, tool, command):
 # réglages, le critic, la CI ou l'audit. Une modification voulue se fait par Younes sur une branche human/*.
 
 LOCKED = ("tools/hooks/pre_tool_use.py", "tools/hooks/critic_bash.py", ".claude/settings.json",
-          ".claude/agents/critic.md", ".github/workflows/ci.yml", "tools/audit.py")
+          ".claude/agents/critic.md", ".github/workflows/ci.yml", "tools/audit.py",
+          # Critic, bloquant 2, et relecture externe : réglages locaux, outils de l'audit, liste partagée.
+          ".claude/settings.local.json", "tools/secret_scan.py", "tools/mutation_check.py", "tools/locked_paths.txt")
+# Critic, bloquant 4 : dossiers parents des fichiers verrouillés (restauration ou copie du dossier entier).
+LOCKED_DIRS = ("tools/", "tools/hooks/", ".claude/", ".claude/agents/", ".github/", ".github/workflows/", "tests/")
+LOCKED_LIST = REPO / "tools" / "locked_paths.txt"
 
 
 @pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit"])
@@ -242,10 +247,121 @@ def test_locked_files_git_read_passes(repo, path, template):
     assert (rc, err) == (0, "")
 
 
-def test_locked_list_matches_hook_and_audit():
+def test_locked_list_is_one_file_shared_by_hook_and_audit():
+    # Relecture externe : une seule liste, dans un fichier verrouillé, lue par le hook et par le filet.
     from tools import audit
     from tools.hooks import pre_tool_use
-    assert set(pre_tool_use.PROTECTED) == set(audit.GUARDED) == set(LOCKED) | {"tests/test_audit_guards.py"}
+    entries = {line.strip() for line in LOCKED_LIST.read_text(encoding="utf-8").splitlines()
+               if line.strip() and not line.lstrip().startswith("#")}
+    files = {e for e in entries if not e.endswith("/")}
+    assert files == set(LOCKED) | {"tests/test_audit_guards.py"}
+    assert entries - files == set(LOCKED_DIRS)
+    assert set(pre_tool_use.PROTECTED) == set(audit.GUARDED) == files
+    assert set(pre_tool_use.PROTECTED_DIRS) == set(LOCKED_DIRS)
+
+
+# ---------------------------------------------------------------- critic, bloquant 4 : dossiers parents
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "git checkout origin/main -- tools/hooks"),
+    ("Bash", "git restore --source=origin/main -- .claude"),
+    ("Bash", "git checkout HEAD~1 -- .github"),
+    ("Bash", "cp -r /tmp/h/. tools/hooks/"),
+    ("Bash", "rm -rf .github/workflows"),
+    ("Bash", "git checkout HEAD~1 -- tools"),
+    ("Bash", "git checkout HEAD~1 -- tests/"),
+    ("Bash", "git checkout HEAD~1 -- '.claude/agents'"),
+    ("PowerShell", "Copy-Item -Recurse x .claude\\agents"),
+    ("PowerShell", f"Remove-Item -Recurse \"{str(REPO / 'tools' / 'hooks')}\""),
+])
+def test_locked_dirs_are_blocked_for_shell(repo, tool, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo, tool))
+    assert rc == 2 and "Bloqué" in err, command
+
+
+@pytest.mark.parametrize("command", [
+    "git diff origin/main...HEAD -- tools/hooks",
+    "git log --oneline -- .claude",
+    "git status .github",
+    "git show HEAD -- tests/",
+    "python -m tools.audit --protected-only",
+    "ls .claude/skills",
+    "python -m pytest -q tests/test_hooks.py",
+    "cat tools/hooks/stop_pytest.py",
+])
+def test_locked_dirs_git_read_and_subpaths_pass(repo, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    assert _hook("pre_tool_use.py", _cmd(command, repo)) == (0, ""), command
+
+
+# ---------------------------------------------------------------- critic, bloquant 3, et relecture externe : push
+# Seul `git push origin spec/<nom>` est permis (avec -u) : rien vers main ni human/* (branche exemptée du filet CI).
+
+@pytest.mark.parametrize("command", [
+    "git push origin HEAD:human/x",
+    "git push -u origin human/x",
+    "git push origin human/x",
+    "git push origin HEAD:spec/x",
+    "git push origin spec/x:spec/x",
+    "git push origin :spec/x",
+    "git push origin --delete spec/x",
+    "git push -d origin spec/x",
+    "git push --force-with-lease origin spec/x",
+    "git push -f origin spec/x",
+    "git push --force origin spec/x",
+    "git push origin +spec/x",
+    "git push origin main",
+    "git push origin HEAD",
+    "git push origin spec/x main",
+    "git push origin spec/x spec/y",
+    "git push upstream spec/x",
+    "git push",
+    "git push origin",
+    "git push -u origin",
+    "git push --tags origin",
+    "git push --mirror origin",
+])
+def test_only_push_of_one_spec_branch_to_origin_is_allowed(repo, command):
+    _git(repo, "switch", "-q", "-c", "spec/x")
+    rc, err = _hook("pre_tool_use.py", _cmd(command, repo))
+    assert rc == 2 and "Bloqué" in err, command
+
+
+# ---------------------------------------------------------------- critic, bloquant 1 : python -I
+
+def _hook_commands() -> list[str]:
+    settings = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    commands = [h["command"] for group in settings["hooks"].values() for g in group for h in g["hooks"]]
+    critic = (REPO / ".claude" / "agents" / "critic.md").read_text(encoding="utf-8")
+    commands += [c.strip() for c in re.findall(r"^\s*command:\s*(.+)$", critic, flags=re.M)]
+    return commands
+
+
+def test_every_hook_command_runs_python_isolated():
+    commands = _hook_commands()
+    assert len(commands) == 3
+    for command in commands:
+        assert command.startswith("python -I "), command
+
+
+def test_hook_ignores_module_planted_next_to_it(tmp_path):
+    hooks = tmp_path / "tools" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "pre_tool_use.py").write_bytes((HOOKS / "pre_tool_use.py").read_bytes())
+    if LOCKED_LIST.is_file():
+        (tmp_path / "tools" / "locked_paths.txt").write_bytes(LOCKED_LIST.read_bytes())
+    (hooks / "shlex.py").write_text("import pathlib, sys\n(pathlib.Path(__file__).parent / 'planted').write_text('x')\n"
+                                   "sys.exit(0)\n", encoding="utf-8")
+    import shlex
+    command = next(c for c in _hook_commands() if "pre_tool_use.py" in c)
+    args = shlex.split(command.replace("$CLAUDE_PROJECT_DIR", tmp_path.as_posix()))
+    assert args[0] == "python"
+    payload = json.dumps(_write(".env", "Write", str(tmp_path))).encode("utf-8")
+    proc = subprocess.run([sys.executable, *args[1:]], input=payload, capture_output=True,
+                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)}, timeout=60)
+    assert not (hooks / "planted").exists(), "shlex.py déposé à côté du hook a été importé"
+    assert proc.returncode == 2
 
 
 def test_stop_hook_is_not_locked(repo):
