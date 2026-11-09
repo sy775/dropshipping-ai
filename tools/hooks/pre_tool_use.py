@@ -3,6 +3,10 @@
 Doc : https://code.claude.com/docs/en/hooks (« Exit code 2 » : bloque l'appel, stderr est transmis à Claude).
 
 - Écriture ou édition de tests/test_audit_guards.py et de tout fichier .env* (sauf .env.example).
+- Commande Bash ou PowerShell qui mentionne un fichier protégé (relecture externe) : .env* toujours bloqué, même en
+  lecture ; tests/test_audit_guards.py permis seulement dans `git diff|log|show|status` sans redirection.
+- Read, Grep, Glob visant .env* : les règles deny `Read` ne couvrent Grep et Glob qu'en « best-effort »
+  (https://code.claude.com/docs/en/permissions, « What Read and Edit rules cover »).
 - Commandes (Bash, PowerShell) : push vers main, `--force`, `gh repo edit`, `gh secret`, `git filter-repo`,
   `gh pr merge`. Sont aussi traités comme push forcé : `git push -f`, une refspec `+...`, `--mirror`, `--all`.
 Ce contrôle par analyse de texte n'est pas une frontière de sécurité absolue : les règles `permissions.deny` de
@@ -29,6 +33,7 @@ def _err(text: str) -> None:
 PROTECTED = ("tests/test_audit_guards.py",)
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell"}
+READ_TOOLS = {"Read", "Grep", "Glob"}
 FORBIDDEN = (
     (re.compile(r"--force"), "option --force"),
     (re.compile(r"\bgh\s+repo\s+edit\b"), "gh repo edit"),
@@ -60,6 +65,72 @@ def check_path(path: str, project_dir: str) -> str | None:
     name = low.rsplit("/", 1)[-1]
     if name.startswith(".env") and name != ".env.example":
         return f"{rel} : les fichiers .env* (sauf .env.example) ne sont jamais écrits par Claude"
+    return None
+
+
+# ====================================================================== mentions dans une commande
+# Relecture externe de la spec 003 : un fichier protégé se modifie aussi par Bash ou PowerShell (>>, cp, sed -i,
+# Add-Content...). Toute commande dont le texte le mentionne est donc bloquée, quelle que soit l'action.
+# Mention « en position fermée » : précédée d'un délimiteur (début, espace, guillemet, séparateur de chemin...) et
+# non suivie d'un caractère de mot. Limite connue : globs, variables et chemins assemblés ne sont pas vus.
+
+_LEFT = r"(?:^|(?<=[\s'\"`/\\=<>(:;,|&\[{+]))"
+_ENV_MENTION = re.compile(_LEFT + r"(\.env[\w.\-]*)", re.IGNORECASE)
+_GIT_READ_ONLY = {"diff", "log", "show", "status"}
+_UNSAFE_IN_GIT_READ = re.compile(r"[<>`]|\$\(|--output|--ext-diff|--textconv")
+
+
+def _basename_mention(name: str) -> re.Pattern:
+    return re.compile(_LEFT + re.escape(name) + r"(?![\w])", re.IGNORECASE)
+
+
+_PROTECTED_MENTIONS = tuple((p, _basename_mention(p.rsplit("/", 1)[-1])) for p in PROTECTED)
+
+
+def env_mention(text: str) -> str | None:
+    """Premier nom .env* (sauf .env.example) mentionné dans `text`."""
+    for m in _ENV_MENTION.finditer(text):
+        if m.group(1).lower() != ".env.example":
+            return m.group(1)
+    return None
+
+
+def _is_git_read(segment: str) -> bool:
+    """`git diff|log|show|status ...` sans option globale (sauf --no-pager), redirection ni substitution."""
+    if _UNSAFE_IN_GIT_READ.search(segment):
+        return False
+    tokens = _tokens(segment.strip())
+    if not tokens or tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower() not in ("git", "git.exe"):
+        return False
+    rest = tokens[1:]
+    while rest and rest[0] == "--no-pager":
+        rest = rest[1:]
+    return bool(rest) and rest[0] in _GIT_READ_ONLY
+
+
+def check_mentions(command: str) -> str | None:
+    text = command.replace("\\", "/")
+    env = env_mention(text)
+    if env:
+        return f"la commande mentionne {env} : les fichiers .env* (sauf .env.example) sont interdits, même en lecture"
+    for segment in _SEGMENTS.split(text):
+        for protected, pattern in _PROTECTED_MENTIONS:
+            if pattern.search(segment) and not _is_git_read(segment):
+                return (f"la commande mentionne {protected} (protégé) : seules les lectures git diff, log, show "
+                        "et status sont permises")
+    return None
+
+
+# Champs de chemin par outil (doc hooks, « PreToolUse input ») ; le `pattern` de Grep porte sur le contenu.
+_READ_FIELDS = {"Read": ("file_path",), "Grep": ("path", "glob"), "Glob": ("pattern", "path")}
+
+
+def check_read(tool: str, tool_input: dict) -> str | None:
+    """Read, Grep, Glob : chemin ou motif de fichiers visant .env*."""
+    for key in _READ_FIELDS[tool]:
+        value = tool_input.get(key)
+        if isinstance(value, str) and env_mention(value.replace("\\", "/")):
+            return f"{value} : les fichiers .env* (sauf .env.example) ne sont jamais lus par Claude"
     return None
 
 
@@ -191,7 +262,10 @@ def decide(data: dict) -> str | None:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         return check_path(path, project_dir)
     if tool in SHELL_TOOLS:
-        return check_command(tool_input.get("command", ""), data.get("cwd") or project_dir)
+        command = tool_input.get("command", "")
+        return check_mentions(command) or check_command(command, data.get("cwd") or project_dir)
+    if tool in READ_TOOLS:
+        return check_read(tool, tool_input)
     return None
 
 

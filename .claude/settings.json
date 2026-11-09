@@ -3,6 +3,8 @@
     "deny": [
       "Edit(tests/test_audit_guards.py)",
       "Edit(.env)",
+      "Read(.env*)",
+      "Read(**/.env*)",
       "Bash(git push origin main)",
       "Bash(git push origin main *)",
       "Bash(git push origin HEAD:main)",
@@ -18,7 +20,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Read|Grep|Glob",
         "hooks": [
           {
             "type": "command",

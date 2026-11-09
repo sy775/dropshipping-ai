@@ -105,7 +105,8 @@ def _frontmatter(path: Path) -> dict:
 def test_project_settings_wire_hooks_and_deny_rules():
     settings = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
     pre = settings["hooks"]["PreToolUse"]
-    assert set(pre[0]["matcher"].split("|")) >= {"Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "PowerShell"}
+    assert set(pre[0]["matcher"].split("|")) >= {"Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "PowerShell",
+                                                  "Read", "Grep", "Glob"}
     assert pre[0]["hooks"][0]["onFailure"] == "block"
     commands = [h["command"] for group in settings["hooks"].values() for g in group for h in g["hooks"]]
     for command in commands:
@@ -114,6 +115,7 @@ def test_project_settings_wire_hooks_and_deny_rules():
     assert any("stop_pytest.py" in c for c in commands) and "Stop" in settings["hooks"]
     deny = settings["permissions"]["deny"]
     assert "Edit(tests/test_audit_guards.py)" in deny and "Bash(gh pr merge *)" in deny
+    assert {"Read(.env*)", "Read(**/.env*)"} <= set(deny)
 
 
 def test_critic_is_read_only():
